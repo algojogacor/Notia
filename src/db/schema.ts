@@ -64,6 +64,13 @@ CREATE INDEX IF NOT EXISTS idx_notes_is_favorite ON notes(is_favorite);
 CREATE INDEX IF NOT EXISTS idx_subjects_name ON subjects(name);
 CREATE INDEX IF NOT EXISTS idx_topics_subject_id ON topics(subject_id);
 CREATE INDEX IF NOT EXISTS idx_flashcards_note_id ON flashcards(note_id);
+
+-- 4-Year Durability Composite Partial Indexes
+CREATE INDEX IF NOT EXISTS idx_notes_timeline_active ON notes(date_taken DESC, created_at DESC) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_notes_subject_active ON notes(subject_id, date_taken DESC) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_notes_topic_active ON notes(topic_id, date_taken DESC) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_notes_favorite_active ON notes(is_favorite, date_taken DESC) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_notes_queue_pending ON notes(created_at ASC) WHERE deleted_at IS NULL AND (ai_status = 'pending' OR flashcard_status = 'pending');
 `;
 
 export const DEFAULT_SUBJECTS = [

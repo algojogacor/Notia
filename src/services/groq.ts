@@ -11,6 +11,12 @@ import { GroqVisionAnalysisResult, AiEditorResult, AiDiffSection } from '../type
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 export const DEFAULT_VISION_MODEL =
   process.env.EXPO_PUBLIC_GROQ_MODEL || 'qwen/qwen3.8-27b';
+
+export const VISION_FALLBACK_MODELS = [
+  DEFAULT_VISION_MODEL,
+  'llama-3.2-11b-vision-preview',
+  'llama-3.2-90b-vision-preview',
+];
 const REQUEST_TIMEOUT_MS = 30000;
 const STORAGE_KEYS_KEY = '@notia_groq_api_keys';
 

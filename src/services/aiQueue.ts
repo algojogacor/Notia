@@ -63,6 +63,16 @@ async function processOcrNote(db: SQLiteDatabase, note: NoteWithSubject): Promis
       notifyListeners(note.id);
       return;
     }
+
+    // Fast-fail if image file is permanently missing from disk
+    const fileInfo = await FileSystem.getInfoAsync(note.image_path);
+    if (!fileInfo.exists) {
+      console.warn(`[aiQueue] File foto tidak ditemukan di storage: ${note.image_path}`);
+      await updateNoteAiStatus(db, note.id, 'failed_permanent', nowSec, 11);
+      notifyListeners(note.id);
+      return;
+    }
+
     let base64Data: string;
     try {
       base64Data = await FileSystem.readAsStringAsync(note.image_path, { encoding: FileSystem.EncodingType.Base64 });
@@ -167,9 +177,21 @@ export async function stepQueue(): Promise<void> {
   }
 }
 
+export async function recoverStuckProcessingNotes(db: SQLiteDatabase): Promise<void> {
+  try {
+    await db.runAsync("UPDATE notes SET ai_status = 'pending' WHERE ai_status = 'processing' AND deleted_at IS NULL;");
+    await db.runAsync("UPDATE notes SET flashcard_status = 'pending' WHERE flashcard_status = 'processing' AND deleted_at IS NULL;");
+  } catch (err) {
+    console.warn('[aiQueue] Zombie recovery warning:', err);
+  }
+}
+
 export function startAiQueue(db: SQLiteDatabase): void {
   dbInstance = db;
-  stepQueue().catch(() => {});
+  // Recover any notes stuck in 'processing' due to prior app crashes
+  recoverStuckProcessingNotes(db).then(() => {
+    stepQueue().catch(() => {});
+  });
   if (!intervalId) {
     intervalId = setInterval(() => { stepQueue().catch(() => {}); }, 15000);
   }

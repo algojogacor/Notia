@@ -111,19 +111,22 @@ export default function HomeScreen() {
         loadedStats,
         loadedSubs,
         loadedNotes,
-        loadedGrouped,
-        loadedTopicGrouped,
         loadedImpact,
         loadedStreak,
       ] = await Promise.all([
         getDatabaseStats(db),
         getSubjectsWithCount(db),
         getNotes(db),
-        getNotesGroupedBySubject(db),
-        getNotesGroupedByTopic(db),
         calculateAcademicImpact(db),
         getStudyHeatmapAndStreak(db),
       ]);
+
+      // Reuse loadedNotes to build sections in-memory without extra DB queries
+      const [loadedGrouped, loadedTopicGrouped] = await Promise.all([
+        getNotesGroupedBySubject(db, loadedNotes),
+        getNotesGroupedByTopic(db, loadedNotes),
+      ]);
+
       setStats(loadedStats);
       setSubjectsWithCount(loadedSubs);
       setAllNotes(loadedNotes);

@@ -1,5 +1,6 @@
 import { type SQLiteDatabase } from 'expo-sqlite';
 import * as FileSystem from 'expo-file-system/legacy';
+import { compressLecturePhoto, checkStorageSpaceAvailable } from '../utils/imageOptimizer';
 import {
   CREATE_SUBJECTS_TABLE,
   CREATE_TOPICS_TABLE,
@@ -53,8 +54,16 @@ export const NOTE_SELECT_FIELDS = `
  * Migrate and initialize database tables and seed defaults
  */
 export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
-  // Enable foreign keys
-  await db.execAsync('PRAGMA foreign_keys = ON;');
+  // Enable WAL mode, NORMAL synchronous, and foreign keys for concurrent high-performance I/O
+  try {
+    await db.execAsync(`
+      PRAGMA journal_mode = WAL;
+      PRAGMA synchronous = NORMAL;
+      PRAGMA foreign_keys = ON;
+    `);
+  } catch (pragmaErr) {
+    console.warn('Pragma setup warning:', pragmaErr);
+  }
 
   // Create tables
   await db.execAsync(CREATE_SUBJECTS_TABLE);
@@ -122,6 +131,25 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
         [sub.id, sub.name, sub.color]
       );
     }
+  }
+
+  // Auto-expunge soft-deleted notes older than 30 days to free storage permanently
+  try {
+    const oldTrashed = await db.getAllAsync<{ id: string; image_path: string }>(
+      "SELECT id, image_path FROM notes WHERE deleted_at IS NOT NULL AND deleted_at < datetime('now', '-30 days')"
+    );
+    for (const note of oldTrashed) {
+      if (note.image_path && (note.image_path.startsWith('file:') || note.image_path.startsWith('/'))) {
+        try {
+          await FileSystem.deleteAsync(note.image_path, { idempotent: true });
+        } catch {}
+      }
+    }
+    if (oldTrashed.length > 0) {
+      await db.runAsync("DELETE FROM notes WHERE deleted_at IS NOT NULL AND deleted_at < datetime('now', '-30 days')");
+    }
+  } catch (expungeErr) {
+    console.warn('Auto-expunge trash warning:', expungeErr);
   }
 }
 
@@ -239,9 +267,10 @@ export async function getNotes(db: SQLiteDatabase): Promise<NoteWithSubject[]> {
  * Fetch notes grouped by subject for SectionList view
  */
 export async function getNotesGroupedBySubject(
-  db: SQLiteDatabase
+  db: SQLiteDatabase,
+  preloadedNotes?: NoteWithSubject[]
 ): Promise<SubjectSection[]> {
-  const notes = await getNotes(db);
+  const notes = preloadedNotes ?? (await getNotes(db));
 
   const groupMap = new Map<string, SubjectSection>();
 
@@ -479,10 +508,16 @@ export async function saveCapturedNote(
     dateTaken = new Date().toISOString().split('T')[0],
   } = params;
 
-  // 1. Find or create matching subject
+  // 1. Check storage space
+  const storageCheck = await checkStorageSpaceAvailable(30);
+  if (!storageCheck.hasSpace) {
+    throw new Error('Penyimpanan HP hampir penuh (<30 MB). Harap bersihkan ruang penyimpanan.');
+  }
+
+  // 2. Find or create matching subject
   const subject = await findOrCreateSubject(db, subjectName);
 
-  // 2. Persist image to app documents directory
+  // 3. Persist compressed image to app documents directory
   let persistentPath = imageUri;
   try {
     const docDir = FileSystem.documentDirectory;
@@ -493,13 +528,23 @@ export async function saveCapturedNote(
         await FileSystem.makeDirectoryAsync(notesDir, { intermediates: true });
       }
 
+      // Downscale to max 1600px @ 0.72 JPEG (~250 KB)
+      const optimizedUri = await compressLecturePhoto(imageUri);
+
       const noteUniqueId = `note_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       const targetUri = `${notesDir}${noteUniqueId}.jpg`;
-      await FileSystem.copyAsync({ from: imageUri, to: targetUri });
+      await FileSystem.copyAsync({ from: optimizedUri, to: targetUri });
       persistentPath = targetUri;
+
+      // Clean up intermediate cache file if generated
+      if (optimizedUri !== imageUri && (optimizedUri.includes('ImageManipulator') || optimizedUri.includes('cache'))) {
+        try {
+          await FileSystem.deleteAsync(optimizedUri, { idempotent: true });
+        } catch {}
+      }
     }
   } catch (copyErr) {
-    console.warn('Could not copy image to permanent storage, using imageUri:', copyErr);
+    console.warn('Could not compress or copy image to permanent storage, using imageUri:', copyErr);
     persistentPath = imageUri;
   }
 
@@ -569,6 +614,49 @@ export async function deleteNote(
 }
 
 /**
+ * Storage Garbage Collector:
+ * Scans documentDirectory/notes/ and permanently removes unreferenced images
+ */
+export async function cleanOrphanedFiles(db: SQLiteDatabase): Promise<number> {
+  try {
+    const docDir = FileSystem.documentDirectory;
+    if (!docDir) return 0;
+    const notesDir = `${docDir}notes/`;
+    const dirInfo = await FileSystem.getInfoAsync(notesDir);
+    if (!dirInfo.exists) return 0;
+
+    const allFiles = await FileSystem.readDirectoryAsync(notesDir);
+    if (!allFiles || allFiles.length === 0) return 0;
+
+    // Fetch all referenced filenames from notes table
+    const rows = await db.getAllAsync<{ image_path: string }>(
+      'SELECT image_path FROM notes WHERE image_path IS NOT NULL'
+    );
+    const referencedFilenames = new Set<string>();
+    for (const r of rows) {
+      if (r.image_path) {
+        const fname = r.image_path.split('/').pop();
+        if (fname) referencedFilenames.add(fname);
+      }
+    }
+
+    let cleaned = 0;
+    for (const fname of allFiles) {
+      if (!referencedFilenames.has(fname)) {
+        try {
+          await FileSystem.deleteAsync(`${notesDir}${fname}`, { idempotent: true });
+          cleaned++;
+        } catch {}
+      }
+    }
+    return cleaned;
+  } catch (err) {
+    console.warn('cleanOrphanedFiles warning:', err);
+    return 0;
+  }
+}
+
+/**
  * Empty all items from trash permanently
  */
 export async function emptyTrash(
@@ -579,13 +667,20 @@ export async function emptyTrash(
       'SELECT id, image_path FROM notes WHERE deleted_at IS NOT NULL'
     );
     for (const note of trashedNotes) {
-      if (note.image_path && note.image_path.startsWith('file:')) {
+      if (note.image_path && (note.image_path.startsWith('file:') || note.image_path.startsWith('/'))) {
         try {
           await FileSystem.deleteAsync(note.image_path, { idempotent: true });
         } catch {}
       }
     }
     const result = await db.runAsync('DELETE FROM notes WHERE deleted_at IS NOT NULL');
+
+    // Garbage collect any orphaned files & reclaim SQLite disk pages
+    try {
+      await cleanOrphanedFiles(db);
+      await db.execAsync('PRAGMA incremental_vacuum(50);');
+    } catch {}
+
     return result.changes;
   } catch (err) {
     console.error('Failed to empty trash:', err);
@@ -783,6 +878,12 @@ export async function saveBatchCapturedNotes(
     }
   }
 
+  // Verify storage space before processing batch
+  const storageCheck = await checkStorageSpaceAvailable(items.length * 2 + 20);
+  if (!storageCheck.hasSpace) {
+    throw new Error('Penyimpanan HP hampir penuh. Luangkan ruang memori sebelum memproses batch foto.');
+  }
+
   const savedNotes: NoteWithSubject[] = [];
   for (const item of items) {
     const noteId = `note_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
@@ -790,10 +891,18 @@ export async function saveBatchCapturedNotes(
     if (docDir && item.imageUri && !item.imageUri.startsWith(notesDir)) {
       const targetUri = `${notesDir}${noteId}.jpg`;
       try {
-        await FileSystem.copyAsync({ from: item.imageUri, to: targetUri });
+        // Downscale to max 1600px @ 0.72 JPEG (~250 KB)
+        const optimizedUri = await compressLecturePhoto(item.imageUri);
+        await FileSystem.copyAsync({ from: optimizedUri, to: targetUri });
         persistentPath = targetUri;
+
+        if (optimizedUri !== item.imageUri && (optimizedUri.includes('ImageManipulator') || optimizedUri.includes('cache'))) {
+          try {
+            await FileSystem.deleteAsync(optimizedUri, { idempotent: true });
+          } catch {}
+        }
       } catch (e) {
-        console.warn('Failed to copy batch photo:', e);
+        console.warn('Failed to compress/copy batch photo:', e);
       }
     }
     const dateTaken = item.dateTaken || new Date().toISOString().split('T')[0];
@@ -812,7 +921,8 @@ export async function saveBatchCapturedNotes(
  * Fetch all pending notes that need AI processing
  */
 export async function getPendingNotes(
-  db: SQLiteDatabase
+  db: SQLiteDatabase,
+  limit: number = 20
 ): Promise<NoteWithSubject[]> {
   return await db.getAllAsync<NoteWithSubject>(`
     SELECT 
@@ -822,7 +932,8 @@ export async function getPendingNotes(
     LEFT JOIN topics t ON n.topic_id = t.id
     WHERE (n.ai_status = 'pending' OR n.ai_status = 'processing' OR n.flashcard_status = 'pending' OR n.flashcard_status = 'processing') AND n.deleted_at IS NULL
     ORDER BY n.created_at ASC
-  `);
+    LIMIT ?
+  `, [limit]);
 }
 
 /**
@@ -1037,9 +1148,10 @@ export async function getNotesByTopic(
  * Group notes by Subject -> Topic for Home screen TOPIC view mode
  */
 export async function getNotesGroupedByTopic(
-  db: SQLiteDatabase
+  db: SQLiteDatabase,
+  preloadedNotes?: NoteWithSubject[]
 ): Promise<TopicGroupSection[]> {
-  const notes = await getNotes(db);
+  const notes = preloadedNotes ?? (await getNotes(db));
 
   // Group by subject first
   const subjectGroups = new Map<string, {
