@@ -20,6 +20,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
 import AddSubjectModal from '@/components/AddSubjectModal';
+import TopicPicker from '@/components/TopicPicker';
 import { getSubjects, saveBatchCapturedNotes } from '@/src/db/database';
 import { triggerQueueProcessing } from '@/src/services/aiQueue';
 import { Subject } from '@/src/types';
@@ -40,7 +41,10 @@ export default function CameraScreen() {
 
   const [existingSubjects, setExistingSubjects] = useState<Subject[]>([]);
   const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(null);
+  const [selectedTopicId, setSelectedTopicId] = useState<string | null>(null);
+  const [selectedTopicName, setSelectedTopicName] = useState<string | null>(null);
   const [showAddSubjectModal, setShowAddSubjectModal] = useState(false);
+  const [showTopicPicker, setShowTopicPicker] = useState(false);
 
   // Staged batch queue (max 12 per batch)
   const [stagedPhotos, setStagedPhotos] = useState<StagedPhoto[]>([]);
@@ -83,6 +87,7 @@ export default function CameraScreen() {
             current.map((p) => ({
               imageUri: p.uri,
               subjectId: selectedSubjectId,
+              topicId: selectedTopicId,
               dateTaken: p.dateTaken,
             }))
           );
@@ -216,6 +221,7 @@ export default function CameraScreen() {
         stagedPhotos.map((p) => ({
           imageUri: p.uri,
           subjectId: selectedSubjectId,
+          topicId: selectedTopicId,
           dateTaken: p.dateTaken,
         }))
       );
@@ -287,7 +293,11 @@ export default function CameraScreen() {
                   borderColor: selectedSubjectId === null ? theme.tint : theme.border,
                 },
               ]}
-              onPress={() => setSelectedSubjectId(null)}>
+              onPress={() => {
+                setSelectedSubjectId(null);
+                setSelectedTopicId(null);
+                setSelectedTopicName(null);
+              }}>
               <Text
                 style={[
                   styles.subjectChipText,
@@ -309,7 +319,11 @@ export default function CameraScreen() {
                       borderColor: isSelected ? sub.color : theme.border,
                     },
                   ]}
-                  onPress={() => setSelectedSubjectId(sub.id)}>
+                  onPress={() => {
+                    setSelectedSubjectId(sub.id);
+                    setSelectedTopicId(null);
+                    setSelectedTopicName(null);
+                  }}>
                   <View
                     style={[
                       styles.colorDot,
@@ -327,6 +341,39 @@ export default function CameraScreen() {
               );
             })}
           </ScrollView>
+
+          {/* Topic Selector */}
+          <View style={styles.topicSectionRow}>
+            <Text style={[styles.topicSectionLabel, { color: theme.subtext }]}>
+              Topik (opsional):
+            </Text>
+            <TouchableOpacity
+              style={[
+                styles.topicSelectorBtn,
+                {
+                  backgroundColor: theme.card,
+                  borderColor: selectedTopicId ? (selectedSubject?.color || theme.tint) : theme.border,
+                },
+              ]}
+              onPress={() => setShowTopicPicker(true)}>
+              <Ionicons
+                name="folder-outline"
+                size={15}
+                color={selectedTopicId ? (selectedSubject?.color || theme.tint) : theme.subtext}
+              />
+              <Text
+                style={[
+                  styles.topicSelectorText,
+                  {
+                    color: selectedTopicId ? theme.text : theme.subtext,
+                    fontWeight: selectedTopicId ? '600' : '400',
+                  },
+                ]}>
+                {selectedTopicName || 'Tanpa Topik'}
+              </Text>
+              <Ionicons name="chevron-forward" size={14} color={theme.subtext} />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Viewfinder Card */}
@@ -536,6 +583,22 @@ export default function CameraScreen() {
         onSubjectCreated={(newSub) => {
           loadSubjects();
           setSelectedSubjectId(newSub.id);
+          setSelectedTopicId(null);
+          setSelectedTopicName(null);
+        }}
+      />
+
+      {/* Topic Picker Modal */}
+      <TopicPicker
+        visible={showTopicPicker}
+        onClose={() => setShowTopicPicker(false)}
+        subjectId={selectedSubjectId}
+        subjectName={selectedSubject?.name}
+        subjectColor={selectedSubject?.color}
+        selectedTopicId={selectedTopicId}
+        onSelectTopic={(topicId, name) => {
+          setSelectedTopicId(topicId);
+          setSelectedTopicName(name || null);
         }}
       />
 
@@ -647,6 +710,30 @@ const styles = StyleSheet.create({
   subjectChipText: {
     fontSize: 12,
     fontWeight: '600',
+  },
+  topicSectionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 10,
+    paddingTop: 8,
+  },
+  topicSectionLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  topicSelectorBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  topicSelectorText: {
+    fontSize: 12,
+    maxWidth: 160,
   },
   viewfinderCard: {
     borderRadius: 14,

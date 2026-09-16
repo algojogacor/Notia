@@ -2,16 +2,20 @@ import { type SQLiteDatabase } from 'expo-sqlite';
 import * as FileSystem from 'expo-file-system/legacy';
 import {
   CREATE_SUBJECTS_TABLE,
+  CREATE_TOPICS_TABLE,
   CREATE_NOTES_TABLE,
+  CREATE_FLASHCARDS_TABLE,
   CREATE_INDEXES,
   DEFAULT_SUBJECTS,
 } from './schema';
 import {
   Subject,
   SubjectWithCount,
+  Topic,
   Note,
   NoteWithSubject,
   SubjectSection,
+  TopicGroupSection,
   DatabaseStats,
   StudyStreakStats,
   StudyHeatmapCell,
@@ -25,6 +29,7 @@ export const NOTE_SELECT_FIELDS = `
   n.id, 
   n.image_path, 
   n.subject_id, 
+  n.topic_id,
   n.extracted_text, 
   n.date_taken, 
   n.created_at,
@@ -36,8 +41,11 @@ export const NOTE_SELECT_FIELDS = `
   n.last_attempted_at,
   n.retry_count,
   n.source,
+  n.flashcard_status,
+  n.flashcard_retry_count,
   s.name as subject_name,
-  s.color as subject_color
+  s.color as subject_color,
+  t.name as topic_name
 `;
 
 /**
@@ -49,7 +57,9 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
 
   // Create tables
   await db.execAsync(CREATE_SUBJECTS_TABLE);
+  await db.execAsync(CREATE_TOPICS_TABLE);
   await db.execAsync(CREATE_NOTES_TABLE);
+  await db.execAsync(CREATE_FLASHCARDS_TABLE);
 
   // Ensure all columns exist on existing databases before creating indexes
   try {
@@ -79,6 +89,15 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
     }
     if (!existingColNames.has('source')) {
       await db.execAsync("ALTER TABLE notes ADD COLUMN source TEXT DEFAULT 'camera';");
+    }
+    if (!existingColNames.has('flashcard_status')) {
+      await db.execAsync("ALTER TABLE notes ADD COLUMN flashcard_status TEXT DEFAULT 'done';");
+    }
+    if (!existingColNames.has('flashcard_retry_count')) {
+      await db.execAsync('ALTER TABLE notes ADD COLUMN flashcard_retry_count INTEGER DEFAULT 0;');
+    }
+    if (!existingColNames.has('topic_id')) {
+      await db.execAsync('ALTER TABLE notes ADD COLUMN topic_id TEXT;');
     }
   } catch (migErr) {
     console.warn('Migration check error:', migErr);
@@ -206,6 +225,7 @@ export async function getNotes(db: SQLiteDatabase): Promise<NoteWithSubject[]> {
       ${NOTE_SELECT_FIELDS}
     FROM notes n
     LEFT JOIN subjects s ON n.subject_id = s.id
+    LEFT JOIN topics t ON n.topic_id = t.id
     WHERE n.deleted_at IS NULL
     ORDER BY n.date_taken DESC, n.created_at DESC
   `);
@@ -250,6 +270,7 @@ export async function getNoteById(
       ${NOTE_SELECT_FIELDS}
     FROM notes n
     LEFT JOIN subjects s ON n.subject_id = s.id
+    LEFT JOIN topics t ON n.topic_id = t.id
     WHERE n.id = ?
   `,
     [id]
@@ -259,12 +280,13 @@ export async function getNoteById(
 
 /**
  * Advanced multi-criteria search in SQLite:
- * Searches in extracted_text, title, summary, subject name, with optional subject filter
+ * Searches in extracted_text, title, summary, subject name, topic name with optional subject & topic filter
  */
 export async function searchNotesAdvanced(
   db: SQLiteDatabase,
   query: string,
-  subjectId?: string | null
+  subjectId?: string | null,
+  topicId?: string | null
 ): Promise<NoteWithSubject[]> {
   // Normalize whitespace: trim and split into separate keyword tokens
   const tokens = query
@@ -274,28 +296,39 @@ export async function searchNotesAdvanced(
 
   const hasTokens = tokens.length > 0;
   const hasSubject = Boolean(subjectId);
+  const hasTopic = topicId !== undefined && topicId !== null;
 
   let sql = `
     SELECT 
       ${NOTE_SELECT_FIELDS}
     FROM notes n
     LEFT JOIN subjects s ON n.subject_id = s.id
+    LEFT JOIN topics t ON n.topic_id = t.id
   `;
 
   const whereConditions: string[] = ['n.deleted_at IS NULL'];
   const params: any[] = [];
 
-  // Multi-token matching: each word must match either note text, title, summary or subject name
+  // Multi-token matching: each word must match either note text, title, summary, subject name, or topic name
   if (hasTokens) {
     for (const token of tokens) {
-      whereConditions.push('(n.extracted_text LIKE ? OR n.title LIKE ? OR n.summary LIKE ? OR s.name LIKE ?)');
-      params.push(`%${token}%`, `%${token}%`, `%${token}%`, `%${token}%`);
+      whereConditions.push('(n.extracted_text LIKE ? OR n.title LIKE ? OR n.summary LIKE ? OR s.name LIKE ? OR t.name LIKE ?)');
+      params.push(`%${token}%`, `%${token}%`, `%${token}%`, `%${token}%`, `%${token}%`);
     }
   }
 
   if (hasSubject) {
     whereConditions.push('n.subject_id = ?');
     params.push(subjectId);
+  }
+
+  if (hasTopic) {
+    if (topicId === 'none' || topicId === '__none__') {
+      whereConditions.push('n.topic_id IS NULL');
+    } else {
+      whereConditions.push('n.topic_id = ?');
+      params.push(topicId);
+    }
   }
 
   if (whereConditions.length > 0) {
@@ -314,7 +347,7 @@ export async function searchNotes(
   db: SQLiteDatabase,
   query: string
 ): Promise<NoteWithSubject[]> {
-  return await searchNotesAdvanced(db, query, null);
+  return await searchNotesAdvanced(db, query, null, null);
 }
 
 /**
@@ -330,6 +363,7 @@ export async function getNotesBySubject(
       ${NOTE_SELECT_FIELDS}
     FROM notes n
     LEFT JOIN subjects s ON n.subject_id = s.id
+    LEFT JOIN topics t ON n.topic_id = t.id
     WHERE n.subject_id = ? AND n.deleted_at IS NULL
     ORDER BY n.date_taken DESC, n.created_at DESC
   `,
@@ -346,17 +380,19 @@ export async function createNote(
     id: string;
     image_path: string;
     subject_id?: string | null;
+    topic_id?: string | null;
     extracted_text?: string | null;
     date_taken: string;
   }
 ): Promise<NoteWithSubject> {
   await db.runAsync(
-    `INSERT INTO notes (id, image_path, subject_id, extracted_text, date_taken)
-     VALUES (?, ?, ?, ?, ?)`,
+    `INSERT INTO notes (id, image_path, subject_id, topic_id, extracted_text, date_taken)
+     VALUES (?, ?, ?, ?, ?, ?)`,
     [
       note.id,
       note.image_path,
       note.subject_id || null,
+      note.topic_id || null,
       note.extracted_text || null,
       note.date_taken,
     ]
@@ -515,6 +551,7 @@ export async function getTrashNotes(
       ${NOTE_SELECT_FIELDS}
     FROM notes n
     LEFT JOIN subjects s ON n.subject_id = s.id
+    LEFT JOIN topics t ON n.topic_id = t.id
     WHERE n.deleted_at IS NOT NULL
     ORDER BY n.deleted_at DESC
   `);
@@ -655,15 +692,16 @@ export async function saveManualNote(
     title: string;
     transcription: string;
     subjectId?: string | null;
+    topicId?: string | null;
     dateTaken?: string;
   }
 ): Promise<NoteWithSubject> {
   const id = `note_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const dateTaken = params.dateTaken || new Date().toISOString().split('T')[0];
   await db.runAsync(
-    `INSERT INTO notes (id, image_path, subject_id, extracted_text, date_taken, title, ai_status, source)
-     VALUES (?, '', ?, ?, ?, ?, 'done', 'manual')`,
-    [id, params.subjectId || null, params.transcription, dateTaken, params.title]
+    `INSERT INTO notes (id, image_path, subject_id, topic_id, extracted_text, date_taken, title, ai_status, source, flashcard_status)
+     VALUES (?, '', ?, ?, ?, ?, ?, 'done', 'manual', 'pending')`,
+    [id, params.subjectId || null, params.topicId || null, params.transcription, dateTaken, params.title]
   );
   const created = await getNoteById(db, id);
   if (!created) {
@@ -677,7 +715,7 @@ export async function saveManualNote(
  */
 export async function saveBatchCapturedNotes(
   db: SQLiteDatabase,
-  items: Array<{ imageUri: string; subjectId?: string | null; dateTaken?: string }>
+  items: Array<{ imageUri: string; subjectId?: string | null; topicId?: string | null; dateTaken?: string }>
 ): Promise<NoteWithSubject[]> {
   const docDir = FileSystem.documentDirectory;
   const notesDir = docDir ? `${docDir}notes/` : '';
@@ -707,9 +745,9 @@ export async function saveBatchCapturedNotes(
     }
     const dateTaken = item.dateTaken || new Date().toISOString().split('T')[0];
     await db.runAsync(
-      `INSERT INTO notes (id, image_path, subject_id, extracted_text, date_taken, ai_status, retry_count, source)
-       VALUES (?, ?, ?, '', ?, 'pending', 0, 'camera')`,
-      [noteId, persistentPath, item.subjectId || null, dateTaken]
+      `INSERT INTO notes (id, image_path, subject_id, topic_id, extracted_text, date_taken, ai_status, retry_count, source)
+       VALUES (?, ?, ?, ?, '', ?, 'pending', 0, 'camera')`,
+      [noteId, persistentPath, item.subjectId || null, item.topicId || null, dateTaken]
     );
     const created = await getNoteById(db, noteId);
     if (created) savedNotes.push(created);
@@ -728,7 +766,8 @@ export async function getPendingNotes(
       ${NOTE_SELECT_FIELDS}
     FROM notes n
     LEFT JOIN subjects s ON n.subject_id = s.id
-    WHERE (n.ai_status = 'pending' OR n.ai_status = 'processing') AND n.deleted_at IS NULL
+    LEFT JOIN topics t ON n.topic_id = t.id
+    WHERE (n.ai_status = 'pending' OR n.ai_status = 'processing' OR n.flashcard_status = 'pending' OR n.flashcard_status = 'processing') AND n.deleted_at IS NULL
     ORDER BY n.created_at ASC
   `);
 }
@@ -776,14 +815,14 @@ export async function updateNoteAiResult(
   if (data.subjectId) {
     await db.runAsync(
       `UPDATE notes 
-       SET extracted_text = ?, summary = ?, key_points = ?, subject_id = ?, ai_status = 'done', retry_count = 0 
+       SET extracted_text = ?, summary = ?, key_points = ?, subject_id = ?, ai_status = 'done', retry_count = 0, flashcard_status = 'pending', flashcard_retry_count = 0 
        WHERE id = ?`,
       [data.extractedText, data.summary || null, keyPointsJson, data.subjectId, id]
     );
   } else {
     await db.runAsync(
       `UPDATE notes 
-       SET extracted_text = ?, summary = ?, key_points = ?, ai_status = 'done', retry_count = 0 
+       SET extracted_text = ?, summary = ?, key_points = ?, ai_status = 'done', retry_count = 0, flashcard_status = 'pending', flashcard_retry_count = 0 
        WHERE id = ?`,
       [data.extractedText, data.summary || null, keyPointsJson, id]
     );
@@ -818,3 +857,198 @@ export async function resetNoteRetry(
   );
 }
 
+
+export async function saveFlashcards(db: SQLiteDatabase, noteId: string, flashcards: {question: string, answer: string}[]): Promise<void> {
+  for (const fc of flashcards) {
+    const id = 'fc_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    await db.runAsync(
+      `INSERT INTO flashcards (id, note_id, question, answer) VALUES (?, ?, ?, ?)`,
+      [id, noteId, fc.question, fc.answer]
+    );
+  }
+  await db.runAsync(
+    `UPDATE notes SET flashcard_status = 'done', flashcard_retry_count = 0 WHERE id = ?`,
+    [noteId]
+  );
+}
+
+export async function updateNoteFlashcardStatus(db: SQLiteDatabase, id: string, status: AiStatus, retryCount: number = 0): Promise<void> {
+  await db.runAsync(
+    `UPDATE notes SET flashcard_status = ?, flashcard_retry_count = ? WHERE id = ?`,
+    [status, retryCount, id]
+  );
+}
+
+export async function getFlashcardsBySubject(db: SQLiteDatabase, subjectId: string): Promise<any[]> {
+  return await db.getAllAsync(
+    `SELECT f.* FROM flashcards f
+     JOIN notes n ON f.note_id = n.id
+     WHERE n.subject_id = ? AND n.deleted_at IS NULL
+     ORDER BY RANDOM()`,
+    [subjectId]
+  );
+}
+
+export async function getFlashcardsByNote(db: SQLiteDatabase, noteId: string): Promise<any[]> {
+  return await db.getAllAsync(
+    `SELECT * FROM flashcards WHERE note_id = ? ORDER BY RANDOM()`,
+    [noteId]
+  );
+}
+
+/**
+ * Topic Management (100% Offline & Manual)
+ */
+
+export async function getTopicsBySubject(
+  db: SQLiteDatabase,
+  subjectId: string
+): Promise<Topic[]> {
+  return await db.getAllAsync<Topic>(
+    'SELECT * FROM topics WHERE subject_id = ? ORDER BY name COLLATE NOCASE ASC',
+    [subjectId]
+  );
+}
+
+export async function createTopic(
+  db: SQLiteDatabase,
+  subjectId: string,
+  name: string
+): Promise<Topic> {
+  const trimmed = name.trim();
+  const id = `top_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  await db.runAsync(
+    'INSERT INTO topics (id, subject_id, name) VALUES (?, ?, ?)',
+    [id, subjectId, trimmed]
+  );
+  const created = await db.getFirstAsync<Topic>(
+    'SELECT * FROM topics WHERE id = ?',
+    [id]
+  );
+  if (!created) {
+    throw new Error(`Failed to create topic: ${trimmed}`);
+  }
+  return created;
+}
+
+export async function renameTopic(
+  db: SQLiteDatabase,
+  topicId: string,
+  name: string
+): Promise<void> {
+  await db.runAsync(
+    'UPDATE topics SET name = ? WHERE id = ?',
+    [name.trim(), topicId]
+  );
+}
+
+export async function deleteTopic(
+  db: SQLiteDatabase,
+  topicId: string
+): Promise<void> {
+  // Unassign notes in this topic first (safe delete, notes kept intact)
+  await db.runAsync('UPDATE notes SET topic_id = NULL WHERE topic_id = ?', [topicId]);
+  await db.runAsync('DELETE FROM topics WHERE id = ?', [topicId]);
+}
+
+export async function assignNoteTopic(
+  db: SQLiteDatabase,
+  noteId: string,
+  topicId: string | null
+): Promise<void> {
+  await db.runAsync(
+    'UPDATE notes SET topic_id = ? WHERE id = ?',
+    [topicId || null, noteId]
+  );
+}
+
+export async function getNotesByTopic(
+  db: SQLiteDatabase,
+  topicId: string
+): Promise<NoteWithSubject[]> {
+  return await db.getAllAsync<NoteWithSubject>(
+    `
+    SELECT 
+      ${NOTE_SELECT_FIELDS}
+    FROM notes n
+    LEFT JOIN subjects s ON n.subject_id = s.id
+    LEFT JOIN topics t ON n.topic_id = t.id
+    WHERE n.topic_id = ? AND n.deleted_at IS NULL
+    ORDER BY n.date_taken DESC, n.created_at DESC
+  `,
+    [topicId]
+  );
+}
+
+/**
+ * Group notes by Subject -> Topic for Home screen TOPIC view mode
+ */
+export async function getNotesGroupedByTopic(
+  db: SQLiteDatabase
+): Promise<TopicGroupSection[]> {
+  const notes = await getNotes(db);
+
+  // Group by subject first
+  const subjectGroups = new Map<string, {
+    subjectId: string;
+    subjectName: string;
+    subjectColor: string;
+    notes: NoteWithSubject[];
+  }>();
+
+  for (const note of notes) {
+    const sId = note.subject_id || 'unassigned';
+    if (!subjectGroups.has(sId)) {
+      subjectGroups.set(sId, {
+        subjectId: sId,
+        subjectName: note.subject_name || 'Catatan Umum',
+        subjectColor: note.subject_color || '#6B7280',
+        notes: [],
+      });
+    }
+    subjectGroups.get(sId)!.notes.push(note);
+  }
+
+  const sections: TopicGroupSection[] = [];
+
+  for (const sGroup of subjectGroups.values()) {
+    // Within this subject, group by topic
+    const topicGroups = new Map<string, {
+      topicId: string | null;
+      topicName: string;
+      notes: NoteWithSubject[];
+    }>();
+
+    for (const note of sGroup.notes) {
+      const tKey = note.topic_id || '__no_topic__';
+      if (!topicGroups.has(tKey)) {
+        topicGroups.set(tKey, {
+          topicId: note.topic_id || null,
+          topicName: note.topic_name || 'Tanpa Topik',
+          notes: [],
+        });
+      }
+      topicGroups.get(tKey)!.notes.push(note);
+    }
+
+    // Sort topic groups: named topics first, "Tanpa Topik" always last
+    const sortedTopics = Array.from(topicGroups.values()).sort((a, b) => {
+      if (!a.topicId) return 1;
+      if (!b.topicId) return -1;
+      return a.topicName.localeCompare(b.topicName);
+    });
+
+    for (const tGroup of sortedTopics) {
+      sections.push({
+        subjectId: sGroup.subjectId,
+        subjectName: sGroup.subjectName,
+        subjectColor: sGroup.subjectColor,
+        topicId: tGroup.topicId,
+        topicName: tGroup.topicName,
+        data: tGroup.notes,
+      });
+    }
+  }
+
+  return sections;
+}

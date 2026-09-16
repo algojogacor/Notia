@@ -26,6 +26,7 @@ import {
   getSubjectsWithCount,
   getNotes,
   getNotesGroupedBySubject,
+  getNotesGroupedByTopic,
   getDatabaseStats,
   getStudyHeatmapAndStreak,
   resetNoteRetry,
@@ -39,12 +40,13 @@ import {
   SubjectWithCount,
   NoteWithSubject,
   SubjectSection,
+  TopicGroupSection,
   DatabaseStats,
   AcademicImpactStats,
   StudyStreakStats,
 } from '@/src/types';
 
-type ViewMode = 'GROUPED' | 'TIMELINE';
+type ViewMode = 'GROUPED' | 'TOPIC' | 'TIMELINE';
 const ONBOARDING_KEY = '@notia_has_seen_onboarding';
 
 export default function HomeScreen() {
@@ -74,6 +76,7 @@ export default function HomeScreen() {
   const [subjectsWithCount, setSubjectsWithCount] = useState<SubjectWithCount[]>([]);
   const [allNotes, setAllNotes] = useState<NoteWithSubject[]>([]);
   const [groupedSections, setGroupedSections] = useState<SubjectSection[]>([]);
+  const [topicSections, setTopicSections] = useState<TopicGroupSection[]>([]);
   const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('GROUPED');
   const [refreshing, setRefreshing] = useState(false);
@@ -107,6 +110,7 @@ export default function HomeScreen() {
         loadedSubs,
         loadedNotes,
         loadedGrouped,
+        loadedTopicGrouped,
         loadedImpact,
         loadedStreak,
       ] = await Promise.all([
@@ -114,6 +118,7 @@ export default function HomeScreen() {
         getSubjectsWithCount(db),
         getNotes(db),
         getNotesGroupedBySubject(db),
+        getNotesGroupedByTopic(db),
         calculateAcademicImpact(db),
         getStudyHeatmapAndStreak(db),
       ]);
@@ -121,6 +126,7 @@ export default function HomeScreen() {
       setSubjectsWithCount(loadedSubs);
       setAllNotes(loadedNotes);
       setGroupedSections(loadedGrouped);
+      setTopicSections(loadedTopicGrouped);
       setAcademicStats(loadedImpact);
       setStreakStats(loadedStreak);
     } catch (err) {
@@ -153,6 +159,12 @@ export default function HomeScreen() {
     if (!selectedSubjectId) return allNotes;
     return allNotes.filter((n) => n.subject_id === selectedSubjectId);
   }, [allNotes, selectedSubjectId]);
+
+  // Filtered Sections for Topic View
+  const filteredTopicSections = useMemo(() => {
+    if (!selectedSubjectId) return topicSections;
+    return topicSections.filter((s) => s.subjectId === selectedSubjectId);
+  }, [topicSections, selectedSubjectId]);
 
   // Filtered Sections for Grouped View
   const filteredGroupedSections = useMemo(() => {
@@ -545,6 +557,8 @@ export default function HomeScreen() {
             ? selectedSubjectObj.name
             : viewMode === 'GROUPED'
             ? 'Catatan per Mata Kuliah'
+            : viewMode === 'TOPIC'
+            ? 'Catatan per Topik'
             : 'Semua Catatan (Kronologis)'}
         </Text>
 
@@ -571,6 +585,26 @@ export default function HomeScreen() {
                 name="grid-outline"
                 size={16}
                 color={viewMode === 'GROUPED' ? '#FFFFFF' : theme.subtext}
+              />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.toggleBtn,
+                viewMode === 'TOPIC' && { backgroundColor: theme.tint },
+              ]}
+              onPress={() => {
+                if (Platform.OS !== 'web') {
+                  try {
+                    Haptics.selectionAsync();
+                  } catch {}
+                }
+                setViewMode('TOPIC');
+              }}>
+              <Ionicons
+                name="folder-outline"
+                size={16}
+                color={viewMode === 'TOPIC' ? '#FFFFFF' : theme.subtext}
               />
             </TouchableOpacity>
 
@@ -655,7 +689,74 @@ export default function HomeScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      {viewMode === 'GROUPED' && !selectedSubjectId ? (
+      {viewMode === 'TOPIC' && !selectedSubjectId ? (
+        <SectionList
+          sections={filteredTopicSections}
+          keyExtractor={(item) => item.id}
+          ListHeaderComponent={ListHeader}
+          ListEmptyComponent={isGlobalEmpty ? renderGlobalEmpty : renderFilterEmpty}
+          renderItem={renderNoteCard}
+          renderSectionHeader={({ section }) => {
+            const isFirstInSubject = filteredTopicSections.findIndex((s) => s.subjectId === section.subjectId) === filteredTopicSections.indexOf(section);
+            return (
+              <View style={[styles.topicGroupHeaderContainer, { backgroundColor: theme.background }]}>
+                {isFirstInSubject && (
+                  <TouchableOpacity
+                    style={styles.sectionHeaderBar}
+                    activeOpacity={0.7}
+                    onPress={() => section.subjectId !== 'unassigned' && router.push(`/subject/${section.subjectId}`)}>
+                    <View
+                      style={[
+                        styles.sectionColorAccent,
+                        { backgroundColor: section.subjectColor },
+                      ]}
+                    />
+                    <Text style={[styles.sectionHeaderText, { color: theme.text }]}>
+                      {section.subjectName}
+                    </Text>
+                    {section.subjectId !== 'unassigned' && (
+                      <Ionicons name="chevron-forward" size={16} color={theme.subtext} style={{ marginLeft: 4 }} />
+                    )}
+                  </TouchableOpacity>
+                )}
+
+                {/* Sub-header Topik */}
+                <View style={[styles.topicSubHeaderBar, isFirstInSubject ? { marginTop: 4 } : { marginTop: 12 }]}>
+                  <Ionicons
+                    name={section.topicId ? "folder-outline" : "remove-circle-outline"}
+                    size={14}
+                    color={section.topicId ? section.subjectColor : theme.subtext}
+                  />
+                  <Text
+                    style={[
+                      styles.topicSubHeaderText,
+                      {
+                        color: section.topicId ? theme.text : theme.subtext,
+                        fontStyle: section.topicId ? 'normal' : 'italic',
+                      },
+                    ]}>
+                    {section.topicName}
+                  </Text>
+                  <View style={styles.sectionBadge}>
+                    <Text style={[styles.sectionBadgeText, { color: theme.subtext }]}>
+                      {section.data.length} catatan
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            );
+          }}
+          contentContainerStyle={styles.listContent}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
+          stickySectionHeadersEnabled={false}
+          initialNumToRender={8}
+          maxToRenderPerBatch={10}
+          windowSize={5}
+          removeClippedSubviews={Platform.OS === 'android'}
+        />
+      ) : viewMode === 'GROUPED' && !selectedSubjectId ? (
         <SectionList
           sections={filteredGroupedSections}
           keyExtractor={(item) => item.id}
@@ -1142,5 +1243,22 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '700',
     fontSize: 13,
+  },
+  topicGroupHeaderContainer: {
+    paddingTop: 12,
+    paddingBottom: 4,
+  },
+  topicSubHeaderBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingLeft: 20,
+    paddingRight: 16,
+    paddingVertical: 6,
+  },
+  topicSubHeaderText: {
+    fontSize: 13,
+    fontWeight: '600',
+    flex: 1,
   },
 });

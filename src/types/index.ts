@@ -28,9 +28,19 @@ export interface Note {
   summary?: string | null;
   key_points?: string | null; // JSON string array e.g. '["poin 1", "poin 2"]'
   ai_status?: AiStatus;
+  topic_id?: string | null;
+  flashcard_status?: AiStatus;
+  flashcard_retry_count?: number;
   last_attempted_at?: number | null; // unix timestamp in seconds
   retry_count?: number;
   source?: 'camera' | 'import' | 'manual';
+}
+
+export interface Topic {
+  id: string;
+  subject_id: string;
+  name: string;
+  created_at: string;
 }
 
 export interface AiDiffSection {
@@ -50,6 +60,16 @@ export interface AiEditorResult {
 export interface NoteWithSubject extends Note {
   subject_name?: string | null;
   subject_color?: string | null;
+  topic_name?: string | null;
+}
+
+export interface TopicGroupSection {
+  subjectId: string;
+  subjectName: string;
+  subjectColor: string;
+  topicId: string | null;
+  topicName: string;
+  data: NoteWithSubject[];
 }
 
 export interface StudyHeatmapCell {
@@ -94,3 +114,11 @@ export interface AcademicImpactStats {
   activeDaysCount: number;
 }
 
+
+export interface Flashcard {
+  id: string;
+  note_id: string;
+  question: string;
+  answer: string;
+  created_at: string;
+}

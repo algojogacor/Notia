@@ -16,8 +16,8 @@ import { Ionicons } from '@expo/vector-icons';
 
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
-import { searchNotesAdvanced, getSubjects } from '@/src/db/database';
-import { NoteWithSubject, Subject } from '@/src/types';
+import { searchNotesAdvanced, getSubjects, getTopicsBySubject } from '@/src/db/database';
+import { NoteWithSubject, Subject, Topic } from '@/src/types';
 
 export default function SearchScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -28,6 +28,8 @@ export default function SearchScreen() {
   const [query, setQuery] = useState('');
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(null);
+  const [topics, setTopics] = useState<Topic[]>([]);
+  const [selectedTopicId, setSelectedTopicId] = useState<string | null>(null);
   const [results, setResults] = useState<NoteWithSubject[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
@@ -48,10 +50,22 @@ export default function SearchScreen() {
     }, [loadSubjects])
   );
 
+  // Load topics when subject is chosen
+  useEffect(() => {
+    if (selectedSubjectId) {
+      getTopicsBySubject(db, selectedSubjectId).then((res) => {
+        setTopics(res);
+      }).catch(() => setTopics([]));
+    } else {
+      setTopics([]);
+      setSelectedTopicId(null);
+    }
+  }, [selectedSubjectId, db]);
+
   // Perform search query
   useEffect(() => {
     const hasQuery = query.trim().length > 0;
-    const hasFilter = Boolean(selectedSubjectId);
+    const hasFilter = Boolean(selectedSubjectId) || Boolean(selectedTopicId);
 
     if (!hasQuery && !hasFilter) {
       setResults([]);
@@ -63,7 +77,7 @@ export default function SearchScreen() {
     setIsSearching(true);
     const timer = setTimeout(async () => {
       try {
-        const found = await searchNotesAdvanced(db, query, selectedSubjectId);
+        const found = await searchNotesAdvanced(db, query, selectedSubjectId, selectedTopicId);
         setResults(found);
         setHasSearched(true);
       } catch (err) {
@@ -74,11 +88,15 @@ export default function SearchScreen() {
     }, 200);
 
     return () => clearTimeout(timer);
-  }, [query, selectedSubjectId, db]);
+  }, [query, selectedSubjectId, selectedTopicId, db]);
+
+  const selectedSubject = subjects.find((s) => s.id === selectedSubjectId);
 
   const clearSearch = () => {
     setQuery('');
     setSelectedSubjectId(null);
+    setSelectedTopicId(null);
+    setTopics([]);
     setResults([]);
     setHasSearched(false);
   };
@@ -170,6 +188,95 @@ export default function SearchScreen() {
             );
           })}
         </ScrollView>
+
+        {/* Topic Filter Chips - Muncul hanya saat filter matkul sudah dipilih */}
+        {selectedSubjectId !== null && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={[styles.filterChipsScroll, { paddingTop: 4, paddingBottom: 6 }]}>
+            <TouchableOpacity
+              style={[
+                styles.filterChip,
+                styles.topicSubChip,
+                {
+                  backgroundColor:
+                    selectedTopicId === null ? (selectedSubject?.color || theme.tint) : theme.card,
+                  borderColor:
+                    selectedTopicId === null ? (selectedSubject?.color || theme.tint) : theme.border,
+                },
+              ]}
+              onPress={() => setSelectedTopicId(null)}>
+              <Text
+                style={[
+                  styles.filterChipText,
+                  { color: selectedTopicId === null ? '#FFFFFF' : theme.text },
+                ]}>
+                Semua Topik
+              </Text>
+            </TouchableOpacity>
+
+            {topics.map((top) => {
+              const isSelected = selectedTopicId === top.id;
+              return (
+                <TouchableOpacity
+                  key={top.id}
+                  style={[
+                    styles.filterChip,
+                    styles.topicSubChip,
+                    {
+                      backgroundColor: isSelected
+                        ? (selectedSubject?.color || theme.tint)
+                        : theme.card,
+                      borderColor: isSelected
+                        ? (selectedSubject?.color || theme.tint)
+                        : theme.border,
+                    },
+                  ]}
+                  onPress={() => setSelectedTopicId(isSelected ? null : top.id)}>
+                  <Ionicons
+                    name="folder-outline"
+                    size={12}
+                    color={isSelected ? '#FFFFFF' : (selectedSubject?.color || theme.subtext)}
+                  />
+                  <Text
+                    style={[
+                      styles.filterChipText,
+                      { color: isSelected ? '#FFFFFF' : theme.text },
+                    ]}>
+                    {top.name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+
+            <TouchableOpacity
+              style={[
+                styles.filterChip,
+                styles.topicSubChip,
+                {
+                  backgroundColor:
+                    selectedTopicId === 'none' ? (selectedSubject?.color || theme.tint) : theme.card,
+                  borderColor:
+                    selectedTopicId === 'none' ? (selectedSubject?.color || theme.tint) : theme.border,
+                },
+              ]}
+              onPress={() => setSelectedTopicId(selectedTopicId === 'none' ? null : 'none')}>
+              <Ionicons
+                name="remove-circle-outline"
+                size={12}
+                color={selectedTopicId === 'none' ? '#FFFFFF' : theme.subtext}
+              />
+              <Text
+                style={[
+                  styles.filterChipText,
+                  { color: selectedTopicId === 'none' ? '#FFFFFF' : theme.text },
+                ]}>
+                Tanpa Topik
+              </Text>
+            </TouchableOpacity>
+          </ScrollView>
+        )}
 
         {/* Results Counter Bar */}
         {hasSearched && (
@@ -295,6 +402,14 @@ export default function SearchScreen() {
                           {item.subject_name || 'Umum'}
                         </Text>
                       </View>
+                      {item.topic_name && (
+                        <View style={[styles.topicResultBadge, { borderColor: theme.border }]}>
+                          <Ionicons name="folder-outline" size={10} color={item.subject_color || theme.tint} />
+                          <Text style={[styles.topicResultBadgeText, { color: theme.subtext }]} numberOfLines={1}>
+                            {item.topic_name}
+                          </Text>
+                        </View>
+                      )}
                       <Text
                         style={[styles.resultDate, { color: theme.subtext }]}>
                         {item.date_taken}
@@ -483,5 +598,24 @@ const styles = StyleSheet.create({
   resultText: {
     fontSize: 12,
     lineHeight: 17,
+  },
+  topicSubChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  topicResultBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    borderWidth: 1,
+    maxWidth: 100,
+  },
+  topicResultBadgeText: {
+    fontSize: 10,
+    fontWeight: '500',
   },
 });

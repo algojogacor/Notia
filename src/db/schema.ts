@@ -1,8 +1,3 @@
-/**
- * Database Schema Definition for Notia (SQLite)
- * Local-first storage for notes and subjects
- */
-
 export const CREATE_SUBJECTS_TABLE = `
 CREATE TABLE IF NOT EXISTS subjects (
   id TEXT PRIMARY KEY NOT NULL,
@@ -12,11 +7,22 @@ CREATE TABLE IF NOT EXISTS subjects (
 );
 `;
 
+export const CREATE_TOPICS_TABLE = `
+CREATE TABLE IF NOT EXISTS topics (
+  id TEXT PRIMARY KEY NOT NULL,
+  subject_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (subject_id) REFERENCES subjects(id) ON DELETE CASCADE
+);
+`;
+
 export const CREATE_NOTES_TABLE = `
 CREATE TABLE IF NOT EXISTS notes (
   id TEXT PRIMARY KEY NOT NULL,
   image_path TEXT NOT NULL,
   subject_id TEXT,
+  topic_id TEXT,
   extracted_text TEXT,
   date_taken TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -28,16 +34,34 @@ CREATE TABLE IF NOT EXISTS notes (
   last_attempted_at INTEGER,
   retry_count INTEGER DEFAULT 0,
   source TEXT DEFAULT 'camera',
-  FOREIGN KEY (subject_id) REFERENCES subjects (id) ON DELETE SET NULL
+  flashcard_status TEXT DEFAULT 'done',
+  flashcard_retry_count INTEGER DEFAULT 0,
+  FOREIGN KEY (subject_id) REFERENCES subjects (id) ON DELETE SET NULL,
+  FOREIGN KEY (topic_id) REFERENCES topics (id) ON DELETE SET NULL
+);
+`;
+
+export const CREATE_FLASHCARDS_TABLE = `
+CREATE TABLE IF NOT EXISTS flashcards (
+  id TEXT PRIMARY KEY NOT NULL,
+  note_id TEXT NOT NULL,
+  question TEXT NOT NULL,
+  answer TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (note_id) REFERENCES notes (id) ON DELETE CASCADE
 );
 `;
 
 export const CREATE_INDEXES = `
 CREATE INDEX IF NOT EXISTS idx_notes_subject_id ON notes(subject_id);
+CREATE INDEX IF NOT EXISTS idx_notes_topic_id ON notes(topic_id);
 CREATE INDEX IF NOT EXISTS idx_notes_date_taken ON notes(date_taken DESC);
 CREATE INDEX IF NOT EXISTS idx_notes_deleted_at ON notes(deleted_at);
 CREATE INDEX IF NOT EXISTS idx_notes_ai_status ON notes(ai_status);
+CREATE INDEX IF NOT EXISTS idx_notes_flashcard_status ON notes(flashcard_status);
 CREATE INDEX IF NOT EXISTS idx_subjects_name ON subjects(name);
+CREATE INDEX IF NOT EXISTS idx_topics_subject_id ON topics(subject_id);
+CREATE INDEX IF NOT EXISTS idx_flashcards_note_id ON flashcards(note_id);
 `;
 
 export const DEFAULT_SUBJECTS = [

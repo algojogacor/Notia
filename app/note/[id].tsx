@@ -21,13 +21,17 @@ import { Ionicons } from '@expo/vector-icons';
 
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
-import { getNoteById, getNotes, softDeleteNote, updateNoteSummaryAndKeyPoints } from '@/src/db/database';
+import { getNoteById, getNotes, softDeleteNote, updateNoteSummaryAndKeyPoints, assignNoteTopic, SUBJECT_PALETTE } from '@/src/db/database';
+import TopicPicker from '@/components/TopicPicker';
+import { exportNoteToPdf } from '@/src/services/pdfBooklet';
 import { generateSummaryAndKeyPointsForText } from '@/src/services/groq';
 import { NoteWithSubject } from '@/src/types';
 
 export default function NoteDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const [scrollProgress, setScrollProgress] = useState(0);
+  const [showTopicPicker, setShowTopicPicker] = useState(false);
   const db = useSQLiteContext();
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
@@ -970,5 +974,17 @@ const styles = StyleSheet.create({
   generateSummaryBtnText: {
     fontSize: 13,
     fontWeight: '700',
+  },
+  topicBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  topicBadgeText: {
+    fontSize: 12,
   },
 });

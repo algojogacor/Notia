@@ -19,6 +19,7 @@ import { useSQLiteContext } from 'expo-sqlite';
 
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
+import TopicPicker from '@/components/TopicPicker';
 import { getSubjects, saveManualNote, findOrCreateSubject } from '@/src/db/database';
 import { requestAiEditorDiff } from '@/src/services/groq';
 import { Subject, NoteWithSubject, AiDiffSection, AiEditorResult } from '@/src/types';
@@ -46,9 +47,14 @@ export default function ManualNoteSheet({
   const [transcription, setTranscription] = useState('');
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(presetSubjectId ?? null);
+  const [selectedTopicId, setSelectedTopicId] = useState<string | null>(null);
+  const [selectedTopicName, setSelectedTopicName] = useState<string | null>(null);
+  const [showTopicPicker, setShowTopicPicker] = useState(false);
   const [newSubjectName, setNewSubjectName] = useState('');
   const [isCreatingSubject, setIsCreatingSubject] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  const selectedSubject = subjects.find((s) => s.id === selectedSubjectId);
 
   // Undo / Redo History
   const [history, setHistory] = useState<string[]>([]);
@@ -256,6 +262,7 @@ export default function ManualNoteSheet({
         title: cleanTitle,
         transcription: cleanText,
         subjectId: selectedSubjectId,
+        topicId: selectedTopicId,
       });
 
       // Clear draft
@@ -367,7 +374,11 @@ export default function ManualNoteSheet({
                 return (
                   <TouchableOpacity
                     key={sub.id}
-                    onPress={() => setSelectedSubjectId(sub.id)}
+                    onPress={() => {
+                      setSelectedSubjectId(sub.id);
+                      setSelectedTopicId(null);
+                      setSelectedTopicName(null);
+                    }}
                     style={[
                       styles.subjectChip,
                       {
@@ -394,6 +405,35 @@ export default function ManualNoteSheet({
                 );
               })}
             </ScrollView>
+
+            {/* Topic Selector Button */}
+            <View style={styles.topicSelectorRow}>
+              <Text style={[styles.topicLabel, { color: theme.subtext }]}>Topik (opsional):</Text>
+              <TouchableOpacity
+                style={[
+                  styles.topicPickerBtn,
+                  {
+                    backgroundColor: theme.paper,
+                    borderColor: selectedTopicId ? (selectedSubject?.color || theme.amber) : theme.rule,
+                  },
+                ]}
+                onPress={() => setShowTopicPicker(true)}>
+                <Ionicons
+                  name="folder-outline"
+                  size={14}
+                  color={selectedTopicId ? (selectedSubject?.color || theme.amber) : theme.subtext}
+                />
+                <Text
+                  style={[
+                    styles.topicPickerBtnText,
+                    { color: selectedTopicId ? theme.ink : theme.subtext },
+                    selectedTopicId && { fontWeight: '600' },
+                  ]}>
+                  {selectedTopicName || 'Tanpa Topik'}
+                </Text>
+                <Ionicons name="chevron-forward" size={13} color={theme.subtext} />
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Rich Text Toolbar */}
@@ -647,6 +687,20 @@ export default function ManualNoteSheet({
             </View>
           </View>
         </Modal>
+
+        {/* Topic Picker Modal */}
+        <TopicPicker
+          visible={showTopicPicker}
+          onClose={() => setShowTopicPicker(false)}
+          subjectId={selectedSubjectId}
+          subjectName={selectedSubject?.name}
+          subjectColor={selectedSubject?.color}
+          selectedTopicId={selectedTopicId}
+          onSelectTopic={(topicId, name) => {
+            setSelectedTopicId(topicId);
+            setSelectedTopicName(name || null);
+          }}
+        />
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -768,6 +822,30 @@ const styles = StyleSheet.create({
   subjectChipText: {
     fontSize: 12,
     fontWeight: '600',
+  },
+  topicSelectorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 10,
+    paddingTop: 8,
+  },
+  topicLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  topicPickerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  topicPickerBtnText: {
+    fontSize: 12,
+    maxWidth: 160,
   },
   toolbar: {
     flexDirection: 'row',

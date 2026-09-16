@@ -505,3 +505,96 @@ Output format JSON ONLY:
   throw lastError || new Error('Gagal menghasilkan rangkuman catatan.');
 }
 
+
+
+export interface GeneratedFlashcard {
+  question: string;
+  answer: string;
+}
+
+export async function generateFlashcards(
+  text: string,
+  model = DEFAULT_VISION_MODEL
+): Promise<GeneratedFlashcard[]> {
+  const keys = await getGroqApiKeys();
+  if (keys.length === 0) {
+    throw new Error('Kunci API Groq belum disetel.');
+  }
+
+  const systemPrompt = `
+Kamu adalah asisten pembuat flashcard studi perkuliahan.
+Tugasmu:
+1. Buat 3 hingga 7 kartu flashcard dari teks materi yang diberikan, sesuaikan dengan panjang dan kepadatan informasi.
+2. 'question' (pertanyaan) harus singkat dan spesifik.
+3. 'answer' (jawaban) harus padat dan langsung pada intinya (tidak bertele-tele).
+4. Gunakan bahasa yang sama persis dengan bahasa catatan.
+
+Output format JSON ONLY:
+{
+  "flashcards": [
+    { "question": "...", "answer": "..." }
+  ]
+}
+`;
+
+  let lastError: any = null;
+  const attempts = keys.length;
+
+  for (let i = 0; i < attempts; i++) {
+    const keyToUse = keys[currentKeyIndex % keys.length];
+    currentKeyIndex++;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+    try {
+      const response = await fetch(GROQ_API_URL, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          Authorization: `Bearer ${keyToUse}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'llama-3.1-8b-instant', // using a faster model for flashcards if possible, or fallback
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: `Teks materi perkuliahan:\n\n${text}` },
+          ],
+          response_format: { type: 'json_object' },
+          temperature: 0.2,
+          max_tokens: 1024,
+        }),
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorMsg = `Groq HTTP ${response.status}`;
+        try {
+          const errObj = JSON.parse(errorText);
+          errorMsg = errObj.error?.message || errorMsg;
+        } catch {}
+        if (response.status === 429 || response.status === 401) {
+          lastError = new Error(errorMsg);
+          continue;
+        }
+        throw new Error(errorMsg);
+      }
+
+      const data = await response.json();
+      const rawContent = data.choices?.[0]?.message?.content;
+      if (!rawContent) throw new Error('Respon flashcard kosong.');
+
+      const parsed = JSON.parse(rawContent);
+      return Array.isArray(parsed.flashcards) ? parsed.flashcards : [];
+    } catch (err: any) {
+      clearTimeout(timeoutId);
+      lastError = err;
+      if (i < attempts - 1) continue;
+    }
+  }
+
+  throw lastError || new Error('Gagal menghasilkan flashcard.');
+}
