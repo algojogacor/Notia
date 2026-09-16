@@ -598,3 +598,65 @@ Output format JSON ONLY:
 
   throw lastError || new Error('Gagal menghasilkan flashcard.');
 }
+
+/**
+ * Test AI connection latency by pinging Groq with a 1-token query
+ */
+export async function pingGroqApi(): Promise<{
+  success: boolean;
+  latencyMs: number;
+  error?: string;
+}> {
+  const keys = await getGroqApiKeys();
+  if (!keys || keys.length === 0) {
+    return {
+      success: false,
+      latencyMs: 0,
+      error: 'Kunci API belum diisi',
+    };
+  }
+
+  const keyToUse = keys[0];
+  const startTime = Date.now();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 12000);
+
+  try {
+    const response = await fetch(GROQ_API_URL, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        Authorization: `Bearer ${keyToUse}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'llama-3.1-8b-instant',
+        messages: [{ role: 'user', content: 'hi' }],
+        max_tokens: 1,
+      }),
+    });
+
+    clearTimeout(timeoutId);
+    const latencyMs = Date.now() - startTime;
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorMsg = `HTTP ${response.status}`;
+      try {
+        const errObj = JSON.parse(errorText);
+        errorMsg = errObj.error?.message || errorMsg;
+      } catch {}
+      return { success: false, latencyMs, error: errorMsg };
+    }
+
+    return { success: true, latencyMs };
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+    const latencyMs = Date.now() - startTime;
+    return {
+      success: false,
+      latencyMs,
+      error: err?.message || 'Gagal terhubung ke Groq',
+    };
+  }
+}

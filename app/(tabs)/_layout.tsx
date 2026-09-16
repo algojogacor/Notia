@@ -1,6 +1,6 @@
 import React from 'react';
 import { Tabs, Link } from 'expo-router';
-import { Pressable } from 'react-native';
+import { Pressable, View, Text, StyleSheet, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import Colors from '@/constants/Colors';
@@ -17,13 +17,28 @@ export default function TabLayout() {
         tabBarInactiveTintColor: theme.tabIconDefault,
         tabBarStyle: {
           backgroundColor: theme.card,
-          borderTopColor: theme.border,
-          height: 60,
+          borderTopWidth: 0,
+          height: 64,
           paddingBottom: 8,
           paddingTop: 6,
+          position: 'relative',
         },
+        tabBarBackground: () => (
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.card }]}>
+            {/* Living Notebook stitch-line along the top edge */}
+            <View
+              style={{
+                height: 1,
+                width: '100%',
+                borderTopWidth: 1,
+                borderTopColor: theme.border,
+                borderStyle: 'dashed',
+              }}
+            />
+          </View>
+        ),
         tabBarLabelStyle: {
-          fontSize: 12,
+          fontSize: 11.5,
           fontWeight: '600',
         },
         headerStyle: {
@@ -42,7 +57,7 @@ export default function TabLayout() {
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
               name={focused ? 'book' : 'book-outline'}
-              size={24}
+              size={23}
               color={color}
             />
           ),
@@ -67,12 +82,35 @@ export default function TabLayout() {
         options={{
           title: 'Capture Catatan',
           tabBarLabel: 'Kamera',
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons
-              name={focused ? 'camera' : 'camera-outline'}
-              size={26}
-              color={color}
-            />
+          tabBarButton: ({ ref: _ref, ...props }) => (
+            <Pressable
+              {...props}
+              style={({ pressed }) => [
+                styles.shutterTabContainer,
+                { transform: [{ scale: pressed ? 0.94 : 1 }] },
+              ]}>
+              <View
+                style={[
+                  styles.shutterRaisedButton,
+                  {
+                    backgroundColor: theme.tint,
+                    borderColor: theme.background,
+                  },
+                ]}>
+                <Ionicons name="camera" size={26} color="#FFFFFF" />
+              </View>
+              <Text
+                style={[
+                  styles.shutterLabel,
+                  {
+                    color: props.accessibilityState?.selected
+                      ? theme.tint
+                      : theme.tabIconDefault,
+                  },
+                ]}>
+                Kamera
+              </Text>
+            </Pressable>
           ),
         }}
       />
@@ -84,7 +122,7 @@ export default function TabLayout() {
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
               name={focused ? 'search' : 'search-outline'}
-              size={24}
+              size={23}
               color={color}
             />
           ),
@@ -93,3 +131,36 @@ export default function TabLayout() {
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  shutterTabContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    marginTop: -22,
+  },
+  shutterRaisedButton: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    borderWidth: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 2,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.18,
+        shadowRadius: 6,
+      },
+      android: {
+        elevation: 6,
+      },
+    }),
+  },
+  shutterLabel: {
+    fontSize: 11.5,
+    fontWeight: '600',
+  },
+});

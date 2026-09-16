@@ -21,7 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
-import { getNoteById, getNotes, softDeleteNote, updateNoteSummaryAndKeyPoints, assignNoteTopic, SUBJECT_PALETTE } from '@/src/db/database';
+import { getNoteById, getNotes, softDeleteNote, updateNoteSummaryAndKeyPoints, assignNoteTopic, SUBJECT_PALETTE, toggleFavorite } from '@/src/db/database';
 import TopicPicker from '@/components/TopicPicker';
 import { exportNoteToPdf } from '@/src/services/pdfBooklet';
 import { generateSummaryAndKeyPointsForText } from '@/src/services/groq';
@@ -289,6 +289,19 @@ export default function NoteDetailScreen() {
     }
   };
 
+  const handleToggleFavorite = async () => {
+    if (!note) return;
+    try {
+      if (Platform.OS !== 'web') {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+      }
+      const newFav = await toggleFavorite(db, note.id);
+      setNote({ ...note, is_favorite: newFav });
+    } catch (err) {
+      console.error('Failed to toggle favorite:', err);
+    }
+  };
+
   if (loading) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: theme.background }]}>
@@ -332,6 +345,13 @@ export default function NoteDetailScreen() {
           title: note.subject_name || 'Detail Catatan',
           headerRight: () => (
             <View style={styles.headerButtons}>
+              <TouchableOpacity onPress={handleToggleFavorite} style={styles.headerBtn}>
+                <Ionicons
+                  name={note.is_favorite === 1 ? 'bookmark' : 'bookmark-outline'}
+                  size={22}
+                  color={note.is_favorite === 1 ? '#F59E0B' : theme.tint}
+                />
+              </TouchableOpacity>
               <TouchableOpacity onPress={handleShare} style={styles.headerBtn}>
                 <Ionicons name="share-outline" size={22} color={theme.tint} />
               </TouchableOpacity>

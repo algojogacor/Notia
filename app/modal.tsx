@@ -9,13 +9,14 @@ import {
   TouchableOpacity,
   TextInput,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 
 import { useRouter } from 'expo-router';
 import Colors from '@/constants/Colors';
-import { useColorScheme } from '@/components/useColorScheme';
+import { useColorScheme, useThemePreference, ThemePreference } from '@/components/useColorScheme';
 import { useSQLiteContext } from 'expo-sqlite';
 import OnboardingModal from '@/components/OnboardingModal';
 import { shareNotiaApp } from '@/src/services/analytics';
@@ -24,6 +25,7 @@ import {
   getGroqApiKeys,
   saveGroqApiKeys,
   DEFAULT_VISION_MODEL,
+  pingGroqApi,
 } from '@/src/services/groq';
 import { exportFullBackup, importFullBackup } from '@/src/services/backup';
 
@@ -31,6 +33,7 @@ export default function ModalScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
+  const { themePreference, setThemePreference } = useThemePreference();
   const db = useSQLiteContext();
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [keysInput, setKeysInput] = useState('');
@@ -39,6 +42,39 @@ export default function ModalScreen() {
   const [isSaved, setIsSaved] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [isPinging, setIsPinging] = useState(false);
+  const [pingResult, setPingResult] = useState<{
+    success: boolean;
+    latencyMs: number;
+    error?: string;
+  } | null>(null);
+
+  const handlePingAi = async () => {
+    setIsPinging(true);
+    setPingResult(null);
+    if (Platform.OS !== 'web') {
+      try {
+        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      } catch {}
+    }
+    try {
+      const res = await pingGroqApi();
+      setPingResult(res);
+      if (Platform.OS !== 'web') {
+        try {
+          if (res.success) {
+            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          } else {
+            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          }
+        } catch {}
+      }
+    } catch {
+      setPingResult({ success: false, latencyMs: 0 });
+    } finally {
+      setIsPinging(false);
+    }
+  };
 
   useEffect(() => {
     async function loadData() {
@@ -322,6 +358,123 @@ export default function ModalScreen() {
             {isSaved ? 'Tersimpan!' : 'Simpan Kunci API'}
           </Text>
         </TouchableOpacity>
+
+        {/* AI Ping Test with Latency Timing */}
+        <View style={styles.pingRow}>
+          <TouchableOpacity
+            style={[
+              styles.pingBtn,
+              { backgroundColor: theme.background, borderColor: theme.border },
+            ]}
+            activeOpacity={0.8}
+            disabled={isPinging}
+            onPress={handlePingAi}>
+            {isPinging ? (
+              <ActivityIndicator size="small" color={theme.tint} />
+            ) : (
+              <Ionicons name="flash-outline" size={16} color={theme.tint} />
+            )}
+            <Text style={[styles.pingBtnText, { color: theme.tint }]}>
+              {isPinging ? 'Menguji Koneksi...' : 'Uji Koneksi AI'}
+            </Text>
+          </TouchableOpacity>
+
+          {pingResult && (
+            <View
+              style={[
+                styles.pingBadge,
+                {
+                  backgroundColor: pingResult.success
+                    ? colorScheme === 'dark'
+                      ? '#14532d'
+                      : '#DCFCE7'
+                    : colorScheme === 'dark'
+                      ? '#7f1d1d'
+                      : '#FEE2E2',
+                  borderColor: pingResult.success ? '#16a34a' : '#ef4444',
+                },
+              ]}>
+              <Ionicons
+                name={pingResult.success ? 'checkmark-circle' : 'alert-circle'}
+                size={14}
+                color={pingResult.success ? '#166534' : '#991B1B'}
+              />
+              <Text
+                style={[
+                  styles.pingBadgeText,
+                  {
+                    color: pingResult.success
+                      ? colorScheme === 'dark'
+                        ? '#86efac'
+                        : '#166534'
+                      : colorScheme === 'dark'
+                        ? '#fca5a5'
+                        : '#991B1B',
+                  },
+                ]}>
+                {pingResult.success
+                  ? `Terhubung — ${pingResult.latencyMs} ms`
+                  : 'Gagal — periksa kunci API'}
+              </Text>
+            </View>
+          )}
+        </View>
+      </View>
+
+      {/* Segmented Theme Control */}
+      <View
+        style={[
+          styles.card,
+          { backgroundColor: theme.card, borderColor: theme.border },
+        ]}>
+        <Text style={[styles.cardTitle, { color: theme.text }]}>
+          🎨 Tema Tampilan
+        </Text>
+        <Text style={[styles.cardDesc, { color: theme.subtext, marginBottom: 12 }]}>
+          Pilih tema Living Notebook yang paling nyaman untuk mata saat membaca catatan kuliah.
+        </Text>
+
+        <View style={styles.themeSegmentRow}>
+          {[
+            { key: 'light', label: 'Terang', icon: 'sunny-outline' },
+            { key: 'dark', label: 'Gelap', icon: 'moon-outline' },
+            { key: 'system', label: 'Sistem', icon: 'phone-portrait-outline' },
+          ].map((item) => {
+            const isActive = themePreference === item.key;
+            return (
+              <TouchableOpacity
+                key={item.key}
+                style={[
+                  styles.themeSegmentBtn,
+                  isActive
+                    ? { backgroundColor: theme.tint, borderColor: theme.tint }
+                    : { backgroundColor: 'transparent', borderColor: theme.border },
+                ]}
+                activeOpacity={0.8}
+                onPress={async () => {
+                  if (Platform.OS !== 'web') {
+                    try {
+                      Haptics.selectionAsync();
+                    } catch {}
+                  }
+                  await setThemePreference(item.key as ThemePreference);
+                }}>
+                <Ionicons
+                  name={item.icon as any}
+                  size={16}
+                  color={isActive ? '#FFFFFF' : theme.text}
+                />
+                <Text
+                  style={[
+                    styles.themeSegmentText,
+                    { color: isActive ? '#FFFFFF' : theme.text },
+                  ]}>
+                  {item.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       </View>
 
       {/* Backup and Restore Card */}
@@ -630,5 +783,55 @@ const styles = StyleSheet.create({
   importBtnText: {
     fontWeight: '600',
     fontSize: 14,
+  },
+  pingRow: {
+    marginTop: 10,
+    gap: 8,
+  },
+  pingBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignSelf: 'flex-start',
+  },
+  pingBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  pingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignSelf: 'flex-start',
+  },
+  pingBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  themeSegmentRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  themeSegmentBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 9,
+    borderRadius: 10,
+    borderWidth: 1.5,
+  },
+  themeSegmentText: {
+    fontSize: 12.5,
+    fontWeight: '700',
   },
 });

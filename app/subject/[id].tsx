@@ -8,6 +8,7 @@ import Animated, { FadeInUp, FadeOutDown } from 'react-native-reanimated';
 
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
+import EmptyStateIllustration from '@/components/EmptyStateIllustration';
 import { getSubjectById, getNotesBySubject, getTopicsBySubject, SUBJECT_PALETTE, softDeleteNote } from '@/src/db/database';
 import { NoteWithSubject, Subject, Topic } from '@/src/types';
 import { exportSubjectBookletToPdf } from '@/src/services/pdfBooklet';
@@ -255,7 +256,18 @@ export default function SubjectArchiveScreen() {
 
         {/* Notes List */}
         <View style={styles.listContainer}>
-          {displayedNotes.map(note => {
+          {displayedNotes.length === 0 ? (
+            <EmptyStateIllustration
+              variant="notes"
+              message={`Belum ada lembar catatan di seksi ${subject?.name || ''}`}
+              subMessage="Ambil foto materi kuliah atau binder tulisan tanganmu untuk menambahkannya ke sini."
+              action={{
+                label: 'Foto Catatan Sekarang',
+                onPress: () => router.push('/camera'),
+              }}
+            />
+          ) : (
+            displayedNotes.map((note) => {
             const isSelected = selected.has(note.id);
             return (
               <TouchableOpacity
@@ -301,7 +313,8 @@ export default function SubjectArchiveScreen() {
                 )}
               </TouchableOpacity>
             );
-          })}
+          })
+          )}
         </View>
       </ScrollView>
 

@@ -6,6 +6,7 @@ import Animated, { interpolate, useAnimatedStyle, useSharedValue, withSpring, wi
 import { Ionicons } from '@expo/vector-icons';
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
+import EmptyStateIllustration from '@/components/EmptyStateIllustration';
 import { getFlashcardsByNote, getFlashcardsBySubject, getNoteById, SUBJECT_PALETTE } from '@/src/db/database';
 import { NoteWithSubject } from '@/src/types';
 
@@ -128,7 +129,15 @@ export default function PracticeScreen() {
               <Text style={[styles.subText, { color: theme.tabIconDefault, marginTop: 8 }]}>Harap tunggu beberapa saat.</Text>
             </>
           ) : (
-            <Text style={[styles.text, { color: theme.text }]}>Belum ada flashcard untuk materi ini.</Text>
+            <EmptyStateIllustration
+              variant="flashcard"
+              message="Belum Ada Flashcard"
+              subMessage="Flashcard akan otomatis dibuat saat AI memproses transkripsi catatan kuliahmu."
+              action={{
+                label: 'Kembali ke Catatan',
+                onPress: () => router.back(),
+              }}
+            />
           )}
         </View>
       ) : pos >= cards.length ? (

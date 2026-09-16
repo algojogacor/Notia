@@ -34,6 +34,7 @@ export interface Note {
   last_attempted_at?: number | null; // unix timestamp in seconds
   retry_count?: number;
   source?: 'camera' | 'import' | 'manual';
+  is_favorite?: number;
 }
 
 export interface Topic {

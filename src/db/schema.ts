@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS notes (
   source TEXT DEFAULT 'camera',
   flashcard_status TEXT DEFAULT 'done',
   flashcard_retry_count INTEGER DEFAULT 0,
+  is_favorite INTEGER DEFAULT 0,
   FOREIGN KEY (subject_id) REFERENCES subjects (id) ON DELETE SET NULL,
   FOREIGN KEY (topic_id) REFERENCES topics (id) ON DELETE SET NULL
 );
@@ -59,6 +60,7 @@ CREATE INDEX IF NOT EXISTS idx_notes_date_taken ON notes(date_taken DESC);
 CREATE INDEX IF NOT EXISTS idx_notes_deleted_at ON notes(deleted_at);
 CREATE INDEX IF NOT EXISTS idx_notes_ai_status ON notes(ai_status);
 CREATE INDEX IF NOT EXISTS idx_notes_flashcard_status ON notes(flashcard_status);
+CREATE INDEX IF NOT EXISTS idx_notes_is_favorite ON notes(is_favorite);
 CREATE INDEX IF NOT EXISTS idx_subjects_name ON subjects(name);
 CREATE INDEX IF NOT EXISTS idx_topics_subject_id ON topics(subject_id);
 CREATE INDEX IF NOT EXISTS idx_flashcards_note_id ON flashcards(note_id);

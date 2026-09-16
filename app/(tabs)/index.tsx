@@ -30,7 +30,9 @@ import {
   getDatabaseStats,
   getStudyHeatmapAndStreak,
   resetNoteRetry,
+  toggleFavorite,
 } from '@/src/db/database';
+import EmptyStateIllustration from '@/components/EmptyStateIllustration';
 import { subscribeQueue, triggerQueueProcessing } from '@/src/services/aiQueue';
 import {
   calculateAcademicImpact,
@@ -154,28 +156,60 @@ export default function HomeScreen() {
     setRefreshing(false);
   };
 
+  // Count total favorite notes
+  const favoriteCount = useMemo(() => {
+    return allNotes.filter((n) => n.is_favorite === 1).length;
+  }, [allNotes]);
+
   // Filtered Notes for Timeline
   const filteredTimelineNotes = useMemo(() => {
     if (!selectedSubjectId) return allNotes;
+    if (selectedSubjectId === 'FAVORITES') {
+      return allNotes.filter((n) => n.is_favorite === 1);
+    }
     return allNotes.filter((n) => n.subject_id === selectedSubjectId);
   }, [allNotes, selectedSubjectId]);
 
   // Filtered Sections for Topic View
   const filteredTopicSections = useMemo(() => {
     if (!selectedSubjectId) return topicSections;
+    if (selectedSubjectId === 'FAVORITES') {
+      return topicSections
+        .map((s) => ({
+          ...s,
+          data: s.data.filter((n) => n.is_favorite === 1),
+        }))
+        .filter((s) => s.data.length > 0);
+    }
     return topicSections.filter((s) => s.subjectId === selectedSubjectId);
   }, [topicSections, selectedSubjectId]);
 
   // Filtered Sections for Grouped View
   const filteredGroupedSections = useMemo(() => {
     if (!selectedSubjectId) return groupedSections;
+    if (selectedSubjectId === 'FAVORITES') {
+      return groupedSections
+        .map((s) => ({
+          ...s,
+          data: s.data.filter((n) => n.is_favorite === 1),
+        }))
+        .filter((s) => s.data.length > 0);
+    }
     return groupedSections.filter((s) => s.subjectId === selectedSubjectId);
   }, [groupedSections, selectedSubjectId]);
 
   const selectedSubjectObj = useMemo(() => {
     if (!selectedSubjectId) return null;
+    if (selectedSubjectId === 'FAVORITES') {
+      return {
+        id: 'FAVORITES',
+        name: 'Catatan Ditandai',
+        color: '#F59E0B',
+        notes_count: favoriteCount,
+      };
+    }
     return subjectsWithCount.find((s) => s.id === selectedSubjectId) || null;
-  }, [subjectsWithCount, selectedSubjectId]);
+  }, [subjectsWithCount, selectedSubjectId, favoriteCount]);
 
   // Render Note Card — Living Notebook style
   const renderNoteCard = useCallback(
@@ -220,15 +254,30 @@ export default function HomeScreen() {
             ]}
           />
 
-          {/* Dog-ear — visual placeholder (folded page corner in top-right) */}
-          <View style={styles.dogEarContainer}>
+          {/* Dog-ear fold in top-right: amber if is_favorite, muted if 0 */}
+          <TouchableOpacity
+            style={styles.dogEarContainer}
+            activeOpacity={0.7}
+            hitSlop={{ top: 12, right: 12, bottom: 12, left: 12 }}
+            onPress={async () => {
+              if (Platform.OS !== 'web') {
+                try {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                } catch {}
+              }
+              await toggleFavorite(db, item.id);
+              loadData();
+            }}>
             <View
               style={[
                 styles.dogEarCutout,
-                { borderTopColor: dogEarBehind, borderLeftColor: dogEarFlap },
+                {
+                  borderTopColor: dogEarBehind,
+                  borderLeftColor: item.is_favorite === 1 ? '#F59E0B' : dogEarFlap,
+                },
               ]}
             />
-          </View>
+          </TouchableOpacity>
 
           <View style={styles.cardContentRow}>
             {/* Thumbnail — slightly taller, portrait feel */}
@@ -487,6 +536,12 @@ export default function HomeScreen() {
             color: theme.tint,
             notes_count: stats.notesCount,
           },
+          {
+            id: 'FAVORITES',
+            name: 'Ditandai',
+            color: '#F59E0B',
+            notes_count: favoriteCount,
+          },
           ...subjectsWithCount,
         ]}
         keyExtractor={(item) => item.id}
@@ -494,6 +549,7 @@ export default function HomeScreen() {
         contentContainerStyle={styles.chipsScroll}
         renderItem={({ item }) => {
           const isAll = item.id === 'ALL';
+          const isFav = item.id === 'FAVORITES';
           const isSelected = isAll
             ? selectedSubjectId === null
             : selectedSubjectId === item.id;
@@ -515,12 +571,21 @@ export default function HomeScreen() {
                 }
                 setSelectedSubjectId(isAll ? null : item.id);
               }}>
-              <View
-                style={[
-                  styles.chipDot,
-                  { backgroundColor: isSelected ? '#FFFFFF' : item.color },
-                ]}
-              />
+              {isFav ? (
+                <Ionicons
+                  name={isSelected ? 'bookmark' : 'bookmark-outline'}
+                  size={13}
+                  color={isSelected ? '#FFFFFF' : '#F59E0B'}
+                  style={{ marginRight: 2 }}
+                />
+              ) : (
+                <View
+                  style={[
+                    styles.chipDot,
+                    { backgroundColor: isSelected ? '#FFFFFF' : item.color },
+                  ]}
+                />
+              )}
               <Text
                 style={[
                   styles.chipText,
@@ -640,23 +705,15 @@ export default function HomeScreen() {
         styles.emptyCard,
         { backgroundColor: theme.card, borderColor: theme.border },
       ]}>
-      <View style={styles.emptyIconCircle}>
-        <Ionicons name="camera" size={36} color={theme.tint} />
-      </View>
-      <Text style={[styles.emptyTitle, { color: theme.text }]}>
-        Belum ada catatan kuliah tersimpan
-      </Text>
-      <Text style={[styles.emptySubtitle, { color: theme.subtext }]}>
-        Ambil foto binder tulisan tangan, papan tulis kelas, atau slide dosen.
-        Notia AI akan otomatis mengkategorikan dan menyimpannya di sini!
-      </Text>
-
-      <TouchableOpacity
-        style={[styles.emptyActionBtn, { backgroundColor: theme.tint }]}
-        onPress={() => router.push('/camera')}>
-        <Ionicons name="camera-outline" size={18} color="#FFFFFF" />
-        <Text style={styles.emptyActionBtnText}>Foto Catatan Sekarang</Text>
-      </TouchableOpacity>
+      <EmptyStateIllustration
+        variant="notes"
+        message="Belum ada catatan kuliah tersimpan"
+        subMessage="Ambil foto binder tulisan tangan, papan tulis kelas, atau slide dosen. Notia AI akan otomatis menyusun dan menyimpannya di sini!"
+        action={{
+          label: 'Foto Catatan Sekarang',
+          onPress: () => router.push('/camera'),
+        }}
+      />
     </View>
   );
 
@@ -667,20 +724,27 @@ export default function HomeScreen() {
         styles.emptyCard,
         { backgroundColor: theme.card, borderColor: theme.border },
       ]}>
-      <Ionicons name="folder-open-outline" size={36} color={theme.subtext} />
-      <Text style={[styles.emptyTitle, { color: theme.text, marginTop: 12 }]}>
-        Belum ada catatan untuk "{selectedSubjectObj?.name}"
-      </Text>
-      <Text style={[styles.emptySubtitle, { color: theme.subtext }]}>
-        Foto materi kuliah ini sekarang agar tersimpan otomatis dalam folder mata kuliah ini.
-      </Text>
-
-      <TouchableOpacity
-        style={[styles.emptyActionBtn, { backgroundColor: theme.tint }]}
-        onPress={() => router.push('/camera')}>
-        <Ionicons name="camera-outline" size={18} color="#FFFFFF" />
-        <Text style={styles.emptyActionBtnText}>Ambil Foto Catatan</Text>
-      </TouchableOpacity>
+      <EmptyStateIllustration
+        variant={selectedSubjectId === 'FAVORITES' ? 'notes' : 'topic'}
+        message={
+          selectedSubjectId === 'FAVORITES'
+            ? 'Belum ada catatan yang ditandai'
+            : `Belum ada catatan untuk "${selectedSubjectObj?.name || 'Kategori ini'}"`
+        }
+        subMessage={
+          selectedSubjectId === 'FAVORITES'
+            ? 'Tandai catatan kuliah penting dengan mengetuk lipatan kertas (dog-ear) di sudut kartu catatan.'
+            : 'Foto materi kuliah ini sekarang agar tersimpan otomatis dalam folder mata kuliah ini.'
+        }
+        action={
+          selectedSubjectId === 'FAVORITES'
+            ? undefined
+            : {
+                label: 'Ambil Foto Catatan',
+                onPress: () => router.push('/camera'),
+              }
+        }
+      />
     </View>
   );
 

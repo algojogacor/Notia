@@ -17,6 +17,7 @@ import * as Haptics from 'expo-haptics';
 
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
+import EmptyStateIllustration from '@/components/EmptyStateIllustration';
 import {
   getTrashNotes,
   restoreNote,
@@ -306,20 +307,11 @@ export default function TrashScreen() {
           contentContainerStyle={styles.listContent}
           ListEmptyComponent={
             <View style={[styles.emptyCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-              <View
-                style={[
-                  styles.emptyIconCircle,
-                  { backgroundColor: colorScheme === 'dark' ? '#302a21' : '#f1eadd' },
-                ]}>
-                <Ionicons name="trash-outline" size={32} color={theme.subtext} />
-              </View>
-              <Text style={[styles.emptyTitle, { color: theme.text }]}>
-                Keranjang Bersih
-              </Text>
-              <Text style={[styles.emptySub, { color: theme.subtext }]}>
-                Tidak ada lembar catatan yang dilepas. Semua catatan kuliahmu
-                aman tersimpan di bendelnya.
-              </Text>
+              <EmptyStateIllustration
+                variant="trash"
+                message="Keranjang Bersih"
+                subMessage="Tidak ada lembar catatan yang dilepas. Semua catatan kuliahmu aman tersimpan di bendelnya."
+              />
             </View>
           }
         />

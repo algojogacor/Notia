@@ -43,6 +43,7 @@ export const NOTE_SELECT_FIELDS = `
   n.source,
   n.flashcard_status,
   n.flashcard_retry_count,
+  n.is_favorite,
   s.name as subject_name,
   s.color as subject_color,
   t.name as topic_name
@@ -98,6 +99,9 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
     }
     if (!existingColNames.has('topic_id')) {
       await db.execAsync('ALTER TABLE notes ADD COLUMN topic_id TEXT;');
+    }
+    if (!existingColNames.has('is_favorite')) {
+      await db.execAsync('ALTER TABLE notes ADD COLUMN is_favorite INTEGER DEFAULT 0;');
     }
   } catch (migErr) {
     console.warn('Migration check error:', migErr);
@@ -279,14 +283,51 @@ export async function getNoteById(
 }
 
 /**
+ * Toggle favorite status of a note (0 <-> 1)
+ */
+export async function toggleFavorite(
+  db: SQLiteDatabase,
+  noteId: string
+): Promise<number> {
+  const note = await db.getFirstAsync<{ is_favorite: number }>(
+    'SELECT is_favorite FROM notes WHERE id = ?',
+    [noteId]
+  );
+  const currentFav = note?.is_favorite ? 1 : 0;
+  const newFav = currentFav === 1 ? 0 : 1;
+  await db.runAsync('UPDATE notes SET is_favorite = ? WHERE id = ?', [newFav, noteId]);
+  return newFav;
+}
+
+/**
+ * Fetch all favorite notes
+ */
+export async function getFavoriteNotes(
+  db: SQLiteDatabase
+): Promise<NoteWithSubject[]> {
+  return await db.getAllAsync<NoteWithSubject>(`
+    SELECT 
+      ${NOTE_SELECT_FIELDS}
+    FROM notes n
+    LEFT JOIN subjects s ON n.subject_id = s.id
+    LEFT JOIN topics t ON n.topic_id = t.id
+    WHERE n.deleted_at IS NULL AND n.is_favorite = 1
+    ORDER BY n.date_taken DESC, n.created_at DESC
+  `);
+}
+
+/**
  * Advanced multi-criteria search in SQLite:
- * Searches in extracted_text, title, summary, subject name, topic name with optional subject & topic filter
+ * Searches in extracted_text, title, summary, subject name, topic name with optional subject & topic filter,
+ * time range filter, and favorite filter.
  */
 export async function searchNotesAdvanced(
   db: SQLiteDatabase,
   query: string,
   subjectId?: string | null,
-  topicId?: string | null
+  topicId?: string | null,
+  timeRange?: 'all' | '7d' | '30d' | 'semester' | null,
+  isFavoriteOnly?: boolean | null
 ): Promise<NoteWithSubject[]> {
   // Normalize whitespace: trim and split into separate keyword tokens
   const tokens = query
@@ -329,6 +370,18 @@ export async function searchNotesAdvanced(
       whereConditions.push('n.topic_id = ?');
       params.push(topicId);
     }
+  }
+
+  if (timeRange === '7d') {
+    whereConditions.push("(date(n.date_taken) >= date('now', '-7 days') OR date(n.created_at) >= date('now', '-7 days'))");
+  } else if (timeRange === '30d') {
+    whereConditions.push("(date(n.date_taken) >= date('now', '-30 days') OR date(n.created_at) >= date('now', '-30 days'))");
+  } else if (timeRange === 'semester') {
+    whereConditions.push("(date(n.date_taken) >= date('now', '-180 days') OR date(n.created_at) >= date('now', '-180 days'))");
+  }
+
+  if (isFavoriteOnly) {
+    whereConditions.push('n.is_favorite = 1');
   }
 
   if (whereConditions.length > 0) {

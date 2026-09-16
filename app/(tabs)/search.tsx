@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
+import EmptyStateIllustration from '@/components/EmptyStateIllustration';
 import { searchNotesAdvanced, getSubjects, getTopicsBySubject } from '@/src/db/database';
 import { NoteWithSubject, Subject, Topic } from '@/src/types';
 
@@ -30,6 +31,8 @@ export default function SearchScreen() {
   const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(null);
   const [topics, setTopics] = useState<Topic[]>([]);
   const [selectedTopicId, setSelectedTopicId] = useState<string | null>(null);
+  const [timeFilter, setTimeFilter] = useState<'all' | '7d' | '30d' | 'semester'>('all');
+  const [onlyFavorites, setOnlyFavorites] = useState(false);
   const [results, setResults] = useState<NoteWithSubject[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
@@ -65,7 +68,11 @@ export default function SearchScreen() {
   // Perform search query
   useEffect(() => {
     const hasQuery = query.trim().length > 0;
-    const hasFilter = Boolean(selectedSubjectId) || Boolean(selectedTopicId);
+    const hasFilter =
+      Boolean(selectedSubjectId) ||
+      Boolean(selectedTopicId) ||
+      timeFilter !== 'all' ||
+      onlyFavorites;
 
     if (!hasQuery && !hasFilter) {
       setResults([]);
@@ -77,7 +84,14 @@ export default function SearchScreen() {
     setIsSearching(true);
     const timer = setTimeout(async () => {
       try {
-        const found = await searchNotesAdvanced(db, query, selectedSubjectId, selectedTopicId);
+        const found = await searchNotesAdvanced(
+          db,
+          query,
+          selectedSubjectId,
+          selectedTopicId,
+          timeFilter === 'all' ? null : timeFilter,
+          onlyFavorites
+        );
         setResults(found);
         setHasSearched(true);
       } catch (err) {
@@ -88,7 +102,7 @@ export default function SearchScreen() {
     }, 200);
 
     return () => clearTimeout(timer);
-  }, [query, selectedSubjectId, selectedTopicId, db]);
+  }, [query, selectedSubjectId, selectedTopicId, timeFilter, onlyFavorites, db]);
 
   const selectedSubject = subjects.find((s) => s.id === selectedSubjectId);
 
@@ -96,6 +110,8 @@ export default function SearchScreen() {
     setQuery('');
     setSelectedSubjectId(null);
     setSelectedTopicId(null);
+    setTimeFilter('all');
+    setOnlyFavorites(false);
     setTopics([]);
     setResults([]);
     setHasSearched(false);
@@ -278,6 +294,64 @@ export default function SearchScreen() {
           </ScrollView>
         )}
 
+        {/* Time Range & Favorite Filter Chips */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={[styles.filterChipsScroll, { paddingTop: 4, paddingBottom: 6 }]}>
+          {/* Favorite Toggle Chip */}
+          <TouchableOpacity
+            style={[
+              styles.timeFilterChip,
+              onlyFavorites
+                ? { backgroundColor: '#F59E0B', borderColor: '#F59E0B' }
+                : { backgroundColor: theme.card, borderColor: theme.border },
+            ]}
+            onPress={() => setOnlyFavorites(!onlyFavorites)}>
+            <Ionicons
+              name={onlyFavorites ? 'bookmark' : 'bookmark-outline'}
+              size={12}
+              color={onlyFavorites ? '#FFFFFF' : '#F59E0B'}
+            />
+            <Text
+              style={[
+                styles.timeFilterChipText,
+                { color: onlyFavorites ? '#FFFFFF' : theme.text },
+              ]}>
+              Hanya Favorit
+            </Text>
+          </TouchableOpacity>
+
+          {/* Time options: Semua Waktu | 7 Hari | 30 Hari | Semester */}
+          {[
+            { id: 'all', label: 'Semua Waktu' },
+            { id: '7d', label: '7 Hari' },
+            { id: '30d', label: '30 Hari' },
+            { id: 'semester', label: 'Semester' },
+          ].map((t) => {
+            const isSelected = timeFilter === t.id;
+            return (
+              <TouchableOpacity
+                key={t.id}
+                style={[
+                  styles.timeFilterChip,
+                  isSelected
+                    ? { backgroundColor: theme.tint, borderColor: theme.tint }
+                    : { backgroundColor: theme.card, borderColor: theme.border },
+                ]}
+                onPress={() => setTimeFilter(t.id as any)}>
+                <Text
+                  style={[
+                    styles.timeFilterChipText,
+                    { color: isSelected ? '#FFFFFF' : theme.text },
+                  ]}>
+                  {t.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+
         {/* Results Counter Bar */}
         {hasSearched && (
           <View style={styles.resultsInfoRow}>
@@ -285,7 +359,7 @@ export default function SearchScreen() {
               {results.length} catatan ditemukan
               {query ? ` untuk "${query}"` : ''}
             </Text>
-            {(query.length > 0 || selectedSubjectId !== null) && (
+            {(query.length > 0 || selectedSubjectId !== null || timeFilter !== 'all' || onlyFavorites) && (
               <TouchableOpacity onPress={clearSearch}>
                 <Text style={[styles.clearFilterText, { color: theme.tint }]}>
                   Reset
@@ -333,13 +407,19 @@ export default function SearchScreen() {
         </ScrollView>
       ) : results.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <Ionicons name="document-text-outline" size={44} color={theme.subtext} />
-          <Text style={[styles.emptyTitle, { color: theme.text, marginTop: 12 }]}>
-            Tidak ada catatan yang cocok
-          </Text>
-          <Text style={[styles.emptySubtitle, { color: theme.subtext }]}>
-            Tidak ditemukan catatan dengan kata kunci "{query}". Coba cari kata kunci lain atau pilih filter mata kuliah yang berbeda.
-          </Text>
+          <EmptyStateIllustration
+            variant="search"
+            message="Tidak ada catatan yang cocok"
+            subMessage={
+              query
+                ? `Tidak ditemukan catatan dengan kata kunci "${query}". Coba cari kata kunci lain atau sesuaikan filter pencarian.`
+                : 'Tidak ada catatan yang sesuai dengan filter yang dipilih.'
+            }
+            action={{
+              label: 'Reset Filter & Pencarian',
+              onPress: clearSearch,
+            }}
+          />
         </View>
       ) : (
         <FlatList
@@ -485,6 +565,19 @@ const styles = StyleSheet.create({
   },
   filterChipText: {
     fontSize: 12,
+    fontWeight: '600',
+  },
+  timeFilterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  timeFilterChipText: {
+    fontSize: 11.5,
     fontWeight: '600',
   },
   resultsInfoRow: {
