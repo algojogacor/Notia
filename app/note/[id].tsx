@@ -8,9 +8,12 @@ import {
   ActivityIndicator,
   Share,
   Image,
+  Alert,
+  Platform,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
+import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
 
 import Colors from '@/constants/Colors';
@@ -27,6 +30,7 @@ export default function NoteDetailScreen() {
 
   const [note, setNote] = useState<NoteWithSubject | null>(null);
   const [loading, setLoading] = useState(true);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     async function loadNote() {
@@ -43,13 +47,38 @@ export default function NoteDetailScreen() {
     loadNote();
   }, [id, db]);
 
-  const handleDelete = async () => {
+  const handleDeleteConfirm = () => {
     if (!note) return;
+    Alert.alert(
+      'Hapus Catatan Kuliah?',
+      'Apakah Anda yakin ingin menghapus foto dan catatan ini secara permanen dari perangkat?',
+      [
+        { text: 'Batal', style: 'cancel' },
+        {
+          text: 'Hapus',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteNote(db, note.id);
+              router.back();
+            } catch (err) {
+              console.error('Failed to delete note:', err);
+              Alert.alert('Gagal Menghapus', 'Terjadi kesalahan saat menghapus catatan.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleCopyText = async () => {
+    if (!note?.extracted_text) return;
     try {
-      await deleteNote(db, note.id);
-      router.back();
+      await Clipboard.setStringAsync(note.extracted_text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
     } catch (err) {
-      console.error('Failed to delete note:', err);
+      console.error('Failed to copy to clipboard:', err);
     }
   };
 
@@ -57,10 +86,10 @@ export default function NoteDetailScreen() {
     if (!note?.extracted_text) return;
     try {
       await Share.share({
-        message: `[Notia - ${note.subject_name || 'Catatan Kuliah'}]\n\n${note.extracted_text}`,
+        message: `📚 [Notia - ${note.subject_name || 'Catatan Kuliah'}]\nTanggal: ${note.date_taken}\n\n${note.extracted_text}`,
       });
     } catch (err) {
-      console.error('Error sharing:', err);
+      console.error('Error sharing note:', err);
     }
   };
 
@@ -80,7 +109,7 @@ export default function NoteDetailScreen() {
           Catatan Tidak Ditemukan
         </Text>
         <Text style={[styles.notFoundDesc, { color: theme.subtext }]}>
-          ID Catatan: {id}
+          ID: {id}
         </Text>
         <TouchableOpacity
           style={[styles.backBtn, { backgroundColor: theme.tint }]}
@@ -90,6 +119,13 @@ export default function NoteDetailScreen() {
       </View>
     );
   }
+
+  const hasValidImage =
+    note.image_path &&
+    (note.image_path.startsWith('file:') ||
+      note.image_path.startsWith('http') ||
+      note.image_path.startsWith('content:') ||
+      note.image_path.startsWith('data:'));
 
   return (
     <ScrollView
@@ -103,7 +139,7 @@ export default function NoteDetailScreen() {
               <TouchableOpacity onPress={handleShare} style={styles.headerBtn}>
                 <Ionicons name="share-outline" size={22} color={theme.tint} />
               </TouchableOpacity>
-              <TouchableOpacity onPress={handleDelete} style={styles.headerBtn}>
+              <TouchableOpacity onPress={handleDeleteConfirm} style={styles.headerBtn}>
                 <Ionicons name="trash-outline" size={22} color="#EF4444" />
               </TouchableOpacity>
             </View>
@@ -111,7 +147,7 @@ export default function NoteDetailScreen() {
         }}
       />
 
-      {/* Subject & Date Header */}
+      {/* Meta Bar */}
       <View style={styles.metaRow}>
         <View
           style={[
@@ -123,9 +159,12 @@ export default function NoteDetailScreen() {
             {note.subject_name || 'Umum'}
           </Text>
         </View>
-        <Text style={[styles.dateText, { color: theme.subtext }]}>
-          {note.date_taken}
-        </Text>
+        <View style={styles.dateBadge}>
+          <Ionicons name="calendar-outline" size={14} color={theme.subtext} />
+          <Text style={[styles.dateText, { color: theme.subtext }]}>
+            {note.date_taken}
+          </Text>
+        </View>
       </View>
 
       {/* Image Preview Container */}
@@ -134,22 +173,19 @@ export default function NoteDetailScreen() {
           styles.imageContainer,
           { backgroundColor: colorScheme === 'dark' ? '#1E293B' : '#EEF2FF' },
         ]}>
-        {note.image_path.startsWith('file:') ||
-        note.image_path.startsWith('http') ||
-        note.image_path.startsWith('content:') ||
-        note.image_path.startsWith('data:') ? (
+        {hasValidImage ? (
           <Image
             source={{ uri: note.image_path }}
             style={styles.fullImage}
-            resizeMode="cover"
+            resizeMode="contain"
           />
         ) : (
-          <>
+          <View style={styles.imagePlaceholder}>
             <Ionicons name="image-outline" size={48} color={theme.tint} />
             <Text style={[styles.imagePathText, { color: theme.subtext }]}>
-              Path: {note.image_path}
+              {note.image_path}
             </Text>
-          </>
+          </View>
         )}
       </View>
 
@@ -163,9 +199,26 @@ export default function NoteDetailScreen() {
           <View style={styles.textHeaderLeft}>
             <Ionicons name="sparkles" size={18} color={theme.tint} />
             <Text style={[styles.cardTitle, { color: theme.text }]}>
-              Hasil Transkripsi Teks (AI Vision)
+              Transkripsi Materi (AI Vision)
             </Text>
           </View>
+
+          {/* Copy Button */}
+          <TouchableOpacity
+            style={[
+              styles.copyBtn,
+              { backgroundColor: copied ? '#10B981' : theme.tint },
+            ]}
+            onPress={handleCopyText}>
+            <Ionicons
+              name={copied ? 'checkmark' : 'copy-outline'}
+              size={14}
+              color="#FFFFFF"
+            />
+            <Text style={styles.copyBtnText}>
+              {copied ? 'Tersalin!' : 'Salin Teks'}
+            </Text>
+          </TouchableOpacity>
         </View>
 
         <Text style={[styles.extractedBody, { color: theme.text }]}>
@@ -173,23 +226,53 @@ export default function NoteDetailScreen() {
         </Text>
       </View>
 
-      {/* Note Metadata Footer */}
+      {/* Action Buttons Row */}
+      <View style={styles.actionsRow}>
+        <TouchableOpacity
+          style={[
+            styles.actionBtn,
+            { backgroundColor: theme.card, borderColor: theme.border },
+          ]}
+          onPress={handleShare}>
+          <Ionicons name="share-social-outline" size={18} color={theme.tint} />
+          <Text style={[styles.actionBtnText, { color: theme.text }]}>
+            Bagikan Catatan
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.actionBtn,
+            { backgroundColor: '#FEE2E2', borderColor: '#FECACA' },
+          ]}
+          onPress={handleDeleteConfirm}>
+          <Ionicons name="trash-outline" size={18} color="#EF4444" />
+          <Text style={[styles.actionBtnText, { color: "#EF4444" }]}>
+            Hapus Catatan
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Local SQLite Metadata */}
       <View
         style={[
           styles.footerCard,
           { backgroundColor: theme.card, borderColor: theme.border },
         ]}>
         <Text style={[styles.footerTitle, { color: theme.subtext }]}>
-          METADATA LOKAL (SQLite)
+          PENYIMPANAN LOKAL (SQLite On-Device)
         </Text>
         <Text style={[styles.footerText, { color: theme.subtext }]}>
-          ID: {note.id}
+          • ID Dokumen: {note.id}
         </Text>
         <Text style={[styles.footerText, { color: theme.subtext }]}>
-          Dibuat: {note.created_at}
+          • Tanggal Pengambilan: {note.date_taken}
         </Text>
         <Text style={[styles.footerText, { color: theme.subtext }]}>
-          Penyimpanan: On-device (Privasi Terjamin)
+          • Waktu Input: {note.created_at}
+        </Text>
+        <Text style={[styles.footerText, { color: theme.subtext }]}>
+          • Privasi: 100% tersimpan offline di ponsel Anda
         </Text>
       </View>
     </ScrollView>
@@ -202,7 +285,7 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     padding: 16,
-    paddingBottom: 36,
+    paddingBottom: 40,
   },
   loadingContainer: {
     flex: 1,
@@ -240,13 +323,13 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   headerBtn: {
-    padding: 4,
+    padding: 6,
   },
   metaRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 14,
   },
   subjectBadge: {
     flexDirection: 'row',
@@ -261,24 +344,37 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
   },
+  dateBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
   dateText: {
     fontSize: 13,
+    fontWeight: '500',
   },
   imageContainer: {
-    height: 240,
+    height: 300,
     borderRadius: 16,
     overflow: 'hidden',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
-    gap: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
   fullImage: {
     width: '100%',
     height: '100%',
   },
+  imagePlaceholder: {
+    alignItems: 'center',
+    gap: 8,
+    padding: 16,
+  },
   imagePathText: {
     fontSize: 11,
+    textAlign: 'center',
     fontFamily: 'SpaceMono',
   },
   textCard: {
@@ -291,20 +387,53 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 14,
   },
   textHeaderLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    flex: 1,
   },
   cardTitle: {
     fontSize: 15,
     fontWeight: '700',
   },
+  copyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  copyBtnText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
   extractedBody: {
     fontSize: 14,
     lineHeight: 22,
+  },
+  actionsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 16,
+  },
+  actionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    height: 48,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  actionBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
   },
   footerCard: {
     borderRadius: 12,
@@ -320,5 +449,6 @@ const styles = StyleSheet.create({
   },
   footerText: {
     fontSize: 12,
+    lineHeight: 18,
   },
 });

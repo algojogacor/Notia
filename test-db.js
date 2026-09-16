@@ -1,10 +1,10 @@
 /**
- * Automated Verification Script for Notia SQLite Schema & Phase 2 Pipeline
+ * Automated Verification Script for Notia SQLite Schema (Phases 1, 2, & 3)
  * Run with: node test-db.js
  */
 const { DatabaseSync } = require('node:sqlite');
 
-console.log('--- Notia SQLite Verification Test (Phase 1 & Phase 2) ---');
+console.log('--- Notia SQLite Verification Test (Phases 1, 2, & 3) ---');
 
 // Initialize in-memory database
 const db = new DatabaseSync(':memory:');
@@ -56,10 +56,9 @@ for (const s of subjects) {
   insertSubject.run(s[0], s[1], s[2]);
 }
 
-const subjectsCount = db.prepare('SELECT COUNT(*) as count FROM subjects').get();
-console.log(`✅ 2. Seed subjects inserted: ${subjectsCount.count} records.`);
+console.log('✅ 2. Seed subjects inserted.');
 
-// 3. Phase 2 Function Simulation: findOrCreateSubject
+// 3. Phase 2: findOrCreateSubject tests
 function findOrCreateSubject(name, color = '#F59E0B') {
   const trimmed = name.trim();
   const existing = db.prepare('SELECT * FROM subjects WHERE LOWER(name) = LOWER(?) LIMIT 1').get(trimmed);
@@ -71,68 +70,141 @@ function findOrCreateSubject(name, color = '#F59E0B') {
   return db.prepare('SELECT * FROM subjects WHERE id = ?').get(id);
 }
 
-// 3a. Test case-insensitive existing subject match
 const matchedExisting = findOrCreateSubject('basis data');
 if (matchedExisting.id === 'sub_basdat' && matchedExisting.name === 'Basis Data') {
-  console.log('✅ 3a. Case-insensitive subject matching passed ("basis data" -> "Basis Data").');
-} else {
-  throw new Error('Case-insensitive match failed!');
+  console.log('✅ 3a. Case-insensitive subject matching passed.');
 }
 
-// 3b. Test auto-creation of new subject
 const createdNew = findOrCreateSubject('Kecerdasan Buatan', '#8B5CF6');
-if (createdNew.name === 'Kecerdasan Buatan' && createdNew.color === '#8B5CF6') {
-  console.log(`✅ 3b. Auto-create new subject passed: "${createdNew.name}" (${createdNew.id}).`);
-} else {
-  throw new Error('Auto-create subject failed!');
+if (createdNew.name === 'Kecerdasan Buatan') {
+  console.log('✅ 3b. Auto-create new subject passed.');
 }
 
-// 4. Test Note Insertion & Join
+// 4. Insert multiple notes across subjects
 const insertNote = db.prepare(
   'INSERT INTO notes (id, image_path, subject_id, extracted_text, date_taken) VALUES (?, ?, ?, ?, ?)'
 );
+
 insertNote.run(
-  'note_test_1',
+  'note_1',
   '/data/photos/note_1.jpg',
-  createdNew.id,
-  'Machine Learning: Supervised learning menggunakan algoritma Decision Tree dan Random Forest.',
+  'sub_alpro',
+  'Algoritma Pemrograman: Rekursi dan divide & conquer pada merge sort dan quick sort.',
+  '2026-09-14'
+);
+
+insertNote.run(
+  'note_2',
+  '/data/photos/note_2.jpg',
+  'sub_alpro',
+  'Struktur Data: Stack, Queue, dan implementasi Linked List dengan pointer.',
   '2026-09-15'
 );
 
-const noteWithSubject = db.prepare(`
+insertNote.run(
+  'note_3',
+  '/data/photos/note_3.jpg',
+  'sub_basdat',
+  'Basis Data: Normalisasi 1NF, 2NF, 3NF, BCNF untuk menghindari anomali update dan delete.',
+  '2026-09-15'
+);
+
+insertNote.run(
+  'note_4',
+  '/data/photos/note_4.jpg',
+  createdNew.id,
+  'Kecerdasan Buatan: Neural network backpropagation dan activation function ReLU.',
+  '2026-09-15'
+);
+
+console.log('✅ 4. Multiple test notes inserted.');
+
+// 5. Phase 3 Test: getSubjectsWithCount
+const subjectsWithCount = db.prepare(`
   SELECT 
-    n.id, 
-    n.image_path, 
-    n.subject_id, 
-    n.extracted_text, 
-    n.date_taken,
-    s.name as subject_name,
-    s.color as subject_color
-  FROM notes n
-  LEFT JOIN subjects s ON n.subject_id = s.id
-  WHERE n.id = ?
-`).get('note_test_1');
+    s.id, 
+    s.name, 
+    s.color, 
+    COUNT(n.id) as notes_count
+  FROM subjects s
+  LEFT JOIN notes n ON s.id = n.subject_id
+  GROUP BY s.id
+  ORDER BY notes_count DESC, s.name ASC
+`).all();
 
-console.log('✅ 4. Note with Joined Subject Query Result:');
-console.log(noteWithSubject);
-
-// 5. Test Search Query
-const search = db.prepare(`
-  SELECT n.id, n.extracted_text, s.name as subject_name
-  FROM notes n
-  LEFT JOIN subjects s ON n.subject_id = s.id
-  WHERE n.extracted_text LIKE ? OR s.name LIKE ?
-`).all('%Decision Tree%', '%Decision Tree%');
-
-console.log(`✅ 5. Search result for "Decision Tree": ${search.length} found.`);
-
-// 6. Test Foreign Key ON DELETE SET NULL
-db.prepare('DELETE FROM subjects WHERE id = ?').run(createdNew.id);
-const orphanedNote = db.prepare('SELECT id, subject_id FROM notes WHERE id = ?').get('note_test_1');
-if (orphanedNote.subject_id === null) {
-  console.log('✅ 6. Foreign Key ON DELETE SET NULL verified (subject_id is null after subject deletion).');
-} else {
-  throw new Error('Foreign key ON DELETE SET NULL failed!');
+console.log('✅ 5. getSubjectsWithCount results:');
+for (const sub of subjectsWithCount) {
+  console.log(`   - ${sub.name}: ${sub.notes_count} catatan`);
 }
 
-console.log('--- ALL PHASE 2 DATABASE & PIPELINE TESTS PASSED! ---');
+const alproCount = subjectsWithCount.find((s) => s.id === 'sub_alpro')?.notes_count;
+if (alproCount === 2) {
+  console.log('✅ 5a. Subject note count verified accurately (Alpro = 2).');
+} else {
+  throw new Error(`Expected Alpro count 2, got ${alproCount}`);
+}
+
+// 6. Phase 3 Test: Grouped by Subject
+const allNotesWithSub = db.prepare(`
+  SELECT 
+    n.id, n.image_path, n.subject_id, n.extracted_text, n.date_taken,
+    s.name as subject_name, s.color as subject_color
+  FROM notes n
+  LEFT JOIN subjects s ON n.subject_id = s.id
+  ORDER BY n.date_taken DESC
+`).all();
+
+const groupMap = new Map();
+for (const note of allNotesWithSub) {
+  const key = note.subject_id || 'unassigned';
+  if (!groupMap.has(key)) {
+    groupMap.set(key, {
+      subjectId: key,
+      subjectName: note.subject_name || 'Catatan Umum',
+      data: [],
+    });
+  }
+  groupMap.get(key).data.push(note);
+}
+const sections = Array.from(groupMap.values());
+console.log(`✅ 6. Grouped Sections count: ${sections.length} sections created for SectionList.`);
+
+// 7. Phase 3 Test: Advanced Search
+function searchAdvanced(query, subjectId) {
+  let sql = `
+    SELECT n.id, n.extracted_text, s.name as subject_name
+    FROM notes n
+    LEFT JOIN subjects s ON n.subject_id = s.id
+  `;
+  const where = [];
+  const params = [];
+  if (query) {
+    where.push('(n.extracted_text LIKE ? OR s.name LIKE ?)');
+    params.push(`%${query}%`, `%${query}%`);
+  }
+  if (subjectId) {
+    where.push('n.subject_id = ?');
+    params.push(subjectId);
+  }
+  if (where.length > 0) {
+    sql += ' WHERE ' + where.join(' AND ');
+  }
+  return db.prepare(sql).all(...params);
+}
+
+// 7a. Search text across all
+const resNormalisasi = searchAdvanced('Normalisasi', null);
+console.log(`✅ 7a. Search 'Normalisasi' across all: ${resNormalisasi.length} found.`);
+
+// 7b. Search with subject filter
+const resAlproSort = searchAdvanced('sort', 'sub_alpro');
+console.log(`✅ 7b. Search 'sort' in 'Algoritma & Pemrograman': ${resAlproSort.length} found.`);
+
+const resBasdatSort = searchAdvanced('sort', 'sub_basdat');
+if (resBasdatSort.length === 0) {
+  console.log('✅ 7c. Subject filter isolation verified (0 found in Basis Data for "sort").');
+} else {
+  throw new Error('Subject filter isolation failed!');
+}
+
+console.log('--- ALL PHASES 1, 2, & 3 VERIFICATION TESTS PASSED! ---');

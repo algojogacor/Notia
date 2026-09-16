@@ -1,10 +1,12 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   StyleSheet,
   View,
   Text,
-  ScrollView,
   TouchableOpacity,
+  FlatList,
+  SectionList,
+  Image,
   RefreshControl,
   Platform,
 } from 'react-native';
@@ -14,8 +16,20 @@ import { Ionicons } from '@expo/vector-icons';
 
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
-import { getSubjects, getNotes, getDatabaseStats } from '@/src/db/database';
-import { Subject, NoteWithSubject, DatabaseStats } from '@/src/types';
+import {
+  getSubjectsWithCount,
+  getNotes,
+  getNotesGroupedBySubject,
+  getDatabaseStats,
+} from '@/src/db/database';
+import {
+  SubjectWithCount,
+  NoteWithSubject,
+  SubjectSection,
+  DatabaseStats,
+} from '@/src/types';
+
+type ViewMode = 'GROUPED' | 'TIMELINE';
 
 export default function HomeScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -27,21 +41,26 @@ export default function HomeScreen() {
     notesCount: 0,
     subjectsCount: 0,
   });
-  const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [recentNotes, setRecentNotes] = useState<NoteWithSubject[]>([]);
+  const [subjectsWithCount, setSubjectsWithCount] = useState<SubjectWithCount[]>([]);
+  const [allNotes, setAllNotes] = useState<NoteWithSubject[]>([]);
+  const [groupedSections, setGroupedSections] = useState<SubjectSection[]>([]);
   const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>('GROUPED');
   const [refreshing, setRefreshing] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
-      const [loadedStats, loadedSubjects, loadedNotes] = await Promise.all([
-        getDatabaseStats(db),
-        getSubjects(db),
-        getNotes(db),
-      ]);
+      const [loadedStats, loadedSubs, loadedNotes, loadedGrouped] =
+        await Promise.all([
+          getDatabaseStats(db),
+          getSubjectsWithCount(db),
+          getNotes(db),
+          getNotesGroupedBySubject(db),
+        ]);
       setStats(loadedStats);
-      setSubjects(loadedSubjects);
-      setRecentNotes(loadedNotes);
+      setSubjectsWithCount(loadedSubs);
+      setAllNotes(loadedNotes);
+      setGroupedSections(loadedGrouped);
     } catch (err) {
       console.error('Error loading dashboard data:', err);
     }
@@ -59,33 +78,133 @@ export default function HomeScreen() {
     setRefreshing(false);
   };
 
-  const filteredNotes = selectedSubjectId
-    ? recentNotes.filter((n) => n.subject_id === selectedSubjectId)
-    : recentNotes;
+  // Filtered Notes for Timeline
+  const filteredTimelineNotes = useMemo(() => {
+    if (!selectedSubjectId) return allNotes;
+    return allNotes.filter((n) => n.subject_id === selectedSubjectId);
+  }, [allNotes, selectedSubjectId]);
 
-  return (
-    <ScrollView
-      style={[styles.container, { backgroundColor: theme.background }]}
-      contentContainerStyle={styles.contentContainer}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-      }>
-      {/* Header Banner */}
+  // Filtered Sections for Grouped View
+  const filteredGroupedSections = useMemo(() => {
+    if (!selectedSubjectId) return groupedSections;
+    return groupedSections.filter((s) => s.subjectId === selectedSubjectId);
+  }, [groupedSections, selectedSubjectId]);
+
+  const selectedSubjectObj = useMemo(() => {
+    if (!selectedSubjectId) return null;
+    return subjectsWithCount.find((s) => s.id === selectedSubjectId) || null;
+  }, [subjectsWithCount, selectedSubjectId]);
+
+  // Render Note Card
+  const renderNoteCard = useCallback(
+    ({ item }: { item: NoteWithSubject }) => {
+      const hasValidImage =
+        item.image_path &&
+        (item.image_path.startsWith('file:') ||
+          item.image_path.startsWith('http') ||
+          item.image_path.startsWith('content:') ||
+          item.image_path.startsWith('data:'));
+
+      return (
+        <TouchableOpacity
+          style={[
+            styles.noteCard,
+            { backgroundColor: theme.card, borderColor: theme.border },
+          ]}
+          activeOpacity={0.7}
+          onPress={() => router.push(`/note/${item.id}`)}>
+          <View style={styles.cardContentRow}>
+            {/* Thumbnail */}
+            <View
+              style={[
+                styles.thumbnailContainer,
+                { backgroundColor: colorScheme === 'dark' ? '#1E293B' : '#EEF2FF' },
+              ]}>
+              {hasValidImage ? (
+                <Image
+                  source={{ uri: item.image_path }}
+                  style={styles.thumbnailImage}
+                  resizeMode="cover"
+                />
+              ) : (
+                <Ionicons name="document-text" size={28} color={theme.tint} />
+              )}
+            </View>
+
+            {/* Note Details */}
+            <View style={styles.cardTextCol}>
+              <View style={styles.cardMetaRow}>
+                <View
+                  style={[
+                    styles.subjectBadge,
+                    { backgroundColor: item.subject_color || theme.tint },
+                  ]}>
+                  <Text style={styles.subjectBadgeText}>
+                    {item.subject_name || 'Umum'}
+                  </Text>
+                </View>
+                <Text style={[styles.dateText, { color: theme.subtext }]}>
+                  {item.date_taken}
+                </Text>
+              </View>
+
+              <Text
+                numberOfLines={2}
+                style={[styles.noteExcerpt, { color: theme.text }]}>
+                {item.extracted_text || 'Tidak ada teks terdeteksi.'}
+              </Text>
+            </View>
+
+            <Ionicons
+              name="chevron-forward"
+              size={18}
+              color={theme.tabIconDefault}
+              style={{ alignSelf: 'center' }}
+            />
+          </View>
+        </TouchableOpacity>
+      );
+    },
+    [theme, colorScheme, router]
+  );
+
+  // List Header Component
+  const ListHeader = (
+    <View style={styles.headerSection}>
+      {/* Brand & Greeting Banner */}
       <View style={[styles.headerBanner, { backgroundColor: theme.tint }]}>
         <View style={styles.headerTextContainer}>
-          <Text style={styles.badgeText}>PHASE 1 • FOUNDATION</Text>
+          <Text style={styles.badgeText}>SMART LECTURE NOTES</Text>
           <Text style={styles.appName}>Notia</Text>
           <Text style={styles.appTagline}>
-            Asisten cerdas foto catatan kuliah mahasiswa Indonesia
+            Semua catatan kuliah terorganisir rapi untuk UTS & UAS.
           </Text>
         </View>
         <Ionicons name="sparkles" size={32} color="#FDE047" />
       </View>
 
-      {/* Database Quick Stats */}
+      {/* Quick Search Bar Shortcut */}
+      <TouchableOpacity
+        style={[
+          styles.searchBarShortcut,
+          { backgroundColor: theme.card, borderColor: theme.border },
+        ]}
+        activeOpacity={0.8}
+        onPress={() => router.push('/search')}>
+        <Ionicons name="search" size={20} color={theme.tabIconDefault} />
+        <Text style={[styles.searchPlaceholder, { color: theme.subtext }]}>
+          Cari rumus, definisi, atau catatan...
+        </Text>
+      </TouchableOpacity>
+
+      {/* Stats Summary */}
       <View style={styles.statsRow}>
-        <View style={[styles.statCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          <Ionicons name="documents" size={22} color={theme.tint} />
+        <View
+          style={[
+            styles.statCard,
+            { backgroundColor: theme.card, borderColor: theme.border },
+          ]}>
+          <Ionicons name="documents" size={20} color={theme.tint} />
           <Text style={[styles.statValue, { color: theme.text }]}>
             {stats.notesCount}
           </Text>
@@ -94,8 +213,12 @@ export default function HomeScreen() {
           </Text>
         </View>
 
-        <View style={[styles.statCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          <Ionicons name="school" size={22} color="#10B981" />
+        <View
+          style={[
+            styles.statCard,
+            { backgroundColor: theme.card, borderColor: theme.border },
+          ]}>
+          <Ionicons name="school" size={20} color="#10B981" />
           <Text style={[styles.statValue, { color: theme.text }]}>
             {stats.subjectsCount}
           </Text>
@@ -104,158 +227,258 @@ export default function HomeScreen() {
           </Text>
         </View>
 
-        <View style={[styles.statCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          <Ionicons name="server" size={22} color="#F59E0B" />
-          <Text style={[styles.statValue, { color: theme.text }]}>SQLite</Text>
+        <View
+          style={[
+            styles.statCard,
+            { backgroundColor: theme.card, borderColor: theme.border },
+          ]}>
+          <Ionicons name="shield-checkmark" size={20} color="#F59E0B" />
+          <Text style={[styles.statValue, { color: theme.text }]}>100%</Text>
           <Text style={[styles.statLabel, { color: theme.subtext }]}>
             Local-First
           </Text>
         </View>
       </View>
 
-      {/* Mata Kuliah Filter Chips */}
-      <View style={styles.sectionHeader}>
+      {/* Mata Kuliah Filter Carousel */}
+      <View style={styles.sectionTitleRow}>
         <Text style={[styles.sectionTitle, { color: theme.text }]}>
-          Mata Kuliah ({subjects.length})
+          Filter Mata Kuliah
         </Text>
+        {selectedSubjectId && (
+          <TouchableOpacity onPress={() => setSelectedSubjectId(null)}>
+            <Text style={[styles.resetFilterText, { color: theme.tint }]}>
+              Reset Filter
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
 
-      <ScrollView
+      <FlatList
         horizontal
+        data={[
+          {
+            id: 'ALL',
+            name: 'Semua',
+            color: theme.tint,
+            notes_count: stats.notesCount,
+          },
+          ...subjectsWithCount,
+        ]}
+        keyExtractor={(item) => item.id}
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.chipsScroll}>
-        <TouchableOpacity
-          style={[
-            styles.chip,
-            {
-              backgroundColor:
-                selectedSubjectId === null ? theme.tint : theme.card,
-              borderColor:
-                selectedSubjectId === null ? theme.tint : theme.border,
-            },
-          ]}
-          onPress={() => setSelectedSubjectId(null)}>
-          <Text
-            style={[
-              styles.chipText,
-              {
-                color: selectedSubjectId === null ? '#FFFFFF' : theme.text,
-              },
-            ]}>
-            Semua
-          </Text>
-        </TouchableOpacity>
+        contentContainerStyle={styles.chipsScroll}
+        renderItem={({ item }) => {
+          const isAll = item.id === 'ALL';
+          const isSelected = isAll
+            ? selectedSubjectId === null
+            : selectedSubjectId === item.id;
 
-        {subjects.map((sub) => {
-          const isSelected = selectedSubjectId === sub.id;
           return (
             <TouchableOpacity
-              key={sub.id}
               style={[
                 styles.chip,
                 {
-                  backgroundColor: isSelected ? sub.color : theme.card,
-                  borderColor: isSelected ? sub.color : theme.border,
+                  backgroundColor: isSelected ? item.color : theme.card,
+                  borderColor: isSelected ? item.color : theme.border,
                 },
               ]}
-              onPress={() =>
-                setSelectedSubjectId(isSelected ? null : sub.id)
-              }>
+              onPress={() => setSelectedSubjectId(isAll ? null : item.id)}>
               <View
                 style={[
                   styles.chipDot,
-                  {
-                    backgroundColor: isSelected ? '#FFFFFF' : sub.color,
-                  },
+                  { backgroundColor: isSelected ? '#FFFFFF' : item.color },
                 ]}
               />
               <Text
                 style={[
                   styles.chipText,
+                  { color: isSelected ? '#FFFFFF' : theme.text },
+                ]}>
+                {item.name}
+              </Text>
+              <View
+                style={[
+                  styles.chipCountBadge,
                   {
-                    color: isSelected ? '#FFFFFF' : theme.text,
+                    backgroundColor: isSelected
+                      ? 'rgba(255,255,255,0.3)'
+                      : theme.border,
                   },
                 ]}>
-                {sub.name}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
-
-      {/* Catatan Kuliah Section */}
-      <View style={styles.sectionHeader}>
-        <Text style={[styles.sectionTitle, { color: theme.text }]}>
-          Catatan Terbaru
-        </Text>
-        {filteredNotes.length > 0 && (
-          <Text style={{ color: theme.subtext, fontSize: 13 }}>
-            {filteredNotes.length} item
-          </Text>
-        )}
-      </View>
-
-      {filteredNotes.length === 0 ? (
-        <View
-          style={[
-            styles.emptyCard,
-            { backgroundColor: theme.card, borderColor: theme.border },
-          ]}>
-          <View style={styles.emptyIconCircle}>
-            <Ionicons name="camera" size={32} color={theme.tint} />
-          </View>
-          <Text style={[styles.emptyTitle, { color: theme.text }]}>
-            Belum ada catatan tersimpan
-          </Text>
-          <Text style={[styles.emptySubtitle, { color: theme.subtext }]}>
-            Foto catatan kuliahmu (tulisan tangan, papan tulis, atau slide)
-            agar AI otomatis mengkategorikan ke mata kuliah yang pas!
-          </Text>
-
-          <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: theme.tint }]}
-            onPress={() => router.push('/camera')}>
-            <Ionicons name="camera-outline" size={18} color="#FFFFFF" />
-            <Text style={styles.actionButtonText}>Buka Kamera (Phase 2)</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <View style={styles.notesList}>
-          {filteredNotes.map((note) => (
-            <TouchableOpacity
-              key={note.id}
-              style={[
-                styles.noteCard,
-                { backgroundColor: theme.card, borderColor: theme.border },
-              ]}
-              onPress={() => router.push(`/note/${note.id}`)}>
-              <View style={styles.noteHeader}>
-                <View
+                <Text
                   style={[
-                    styles.subjectBadge,
-                    {
-                      backgroundColor:
-                        note.subject_color || theme.tint,
-                    },
+                    styles.chipCountText,
+                    { color: isSelected ? '#FFFFFF' : theme.subtext },
                   ]}>
-                  <Text style={styles.subjectBadgeText}>
-                    {note.subject_name || 'Umum'}
-                  </Text>
-                </View>
-                <Text style={[styles.noteDate, { color: theme.subtext }]}>
-                  {note.date_taken}
+                  {item.notes_count}
                 </Text>
               </View>
-              <Text
-                numberOfLines={2}
-                style={[styles.noteExcerpt, { color: theme.text }]}>
-                {note.extracted_text || 'Tidak ada teks terdeteksi.'}
-              </Text>
             </TouchableOpacity>
-          ))}
-        </View>
+          );
+        }}
+      />
+
+      {/* View Mode Toggle */}
+      <View style={styles.viewModeRow}>
+        <Text style={[styles.sectionTitle, { color: theme.text }]}>
+          {selectedSubjectObj
+            ? selectedSubjectObj.name
+            : viewMode === 'GROUPED'
+            ? 'Catatan per Mata Kuliah'
+            : 'Semua Catatan (Kronologis)'}
+        </Text>
+
+        {!selectedSubjectId && (
+          <View
+            style={[
+              styles.segmentedToggle,
+              { backgroundColor: theme.card, borderColor: theme.border },
+            ]}>
+            <TouchableOpacity
+              style={[
+                styles.toggleBtn,
+                viewMode === 'GROUPED' && { backgroundColor: theme.tint },
+              ]}
+              onPress={() => setViewMode('GROUPED')}>
+              <Ionicons
+                name="grid-outline"
+                size={16}
+                color={viewMode === 'GROUPED' ? '#FFFFFF' : theme.subtext}
+              />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.toggleBtn,
+                viewMode === 'TIMELINE' && { backgroundColor: theme.tint },
+              ]}
+              onPress={() => setViewMode('TIMELINE')}>
+              <Ionicons
+                name="list-outline"
+                size={16}
+                color={viewMode === 'TIMELINE' ? '#FFFFFF' : theme.subtext}
+              />
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+    </View>
+  );
+
+  // Global Empty State
+  const renderGlobalEmpty = () => (
+    <View
+      style={[
+        styles.emptyCard,
+        { backgroundColor: theme.card, borderColor: theme.border },
+      ]}>
+      <View style={styles.emptyIconCircle}>
+        <Ionicons name="camera" size={36} color={theme.tint} />
+      </View>
+      <Text style={[styles.emptyTitle, { color: theme.text }]}>
+        Belum ada catatan kuliah tersimpan
+      </Text>
+      <Text style={[styles.emptySubtitle, { color: theme.subtext }]}>
+        Ambil foto binder tulisan tangan, papan tulis kelas, atau slide dosen.
+        Notia AI akan otomatis mengkategorikan dan menyimpannya di sini!
+      </Text>
+
+      <TouchableOpacity
+        style={[styles.emptyActionBtn, { backgroundColor: theme.tint }]}
+        onPress={() => router.push('/camera')}>
+        <Ionicons name="camera-outline" size={18} color="#FFFFFF" />
+        <Text style={styles.emptyActionBtnText}>Foto Catatan Sekarang</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  // Filter Empty State
+  const renderFilterEmpty = () => (
+    <View
+      style={[
+        styles.emptyCard,
+        { backgroundColor: theme.card, borderColor: theme.border },
+      ]}>
+      <Ionicons name="folder-open-outline" size={36} color={theme.subtext} />
+      <Text style={[styles.emptyTitle, { color: theme.text, marginTop: 12 }]}>
+        Belum ada catatan untuk "{selectedSubjectObj?.name}"
+      </Text>
+      <Text style={[styles.emptySubtitle, { color: theme.subtext }]}>
+        Foto materi kuliah ini sekarang agar tersimpan otomatis dalam folder mata kuliah ini.
+      </Text>
+
+      <TouchableOpacity
+        style={[styles.emptyActionBtn, { backgroundColor: theme.tint }]}
+        onPress={() => router.push('/camera')}>
+        <Ionicons name="camera-outline" size={18} color="#FFFFFF" />
+        <Text style={styles.emptyActionBtnText}>Ambil Foto Catatan</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  const isGlobalEmpty = allNotes.length === 0;
+  const isFilterEmpty = !isGlobalEmpty && selectedSubjectId !== null && filteredTimelineNotes.length === 0;
+
+  return (
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
+      {viewMode === 'GROUPED' && !selectedSubjectId ? (
+        <SectionList
+          sections={filteredGroupedSections}
+          keyExtractor={(item) => item.id}
+          ListHeaderComponent={ListHeader}
+          ListEmptyComponent={isGlobalEmpty ? renderGlobalEmpty : renderFilterEmpty}
+          renderItem={renderNoteCard}
+          renderSectionHeader={({ section }) => (
+            <View
+              style={[
+                styles.sectionHeaderBar,
+                { backgroundColor: theme.background },
+              ]}>
+              <View
+                style={[
+                  styles.sectionColorAccent,
+                  { backgroundColor: section.subjectColor },
+                ]}
+              />
+              <Text style={[styles.sectionHeaderText, { color: theme.text }]}>
+                {section.subjectName}
+              </Text>
+              <View style={styles.sectionBadge}>
+                <Text style={[styles.sectionBadgeText, { color: theme.subtext }]}>
+                  {section.data.length} catatan
+                </Text>
+              </View>
+            </View>
+          )}
+          contentContainerStyle={styles.listContent}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
+          stickySectionHeadersEnabled={false}
+          initialNumToRender={8}
+          maxToRenderPerBatch={10}
+          windowSize={5}
+          removeClippedSubviews={Platform.OS === 'android'}
+        />
+      ) : (
+        <FlatList
+          data={filteredTimelineNotes}
+          keyExtractor={(item) => item.id}
+          ListHeaderComponent={ListHeader}
+          ListEmptyComponent={isGlobalEmpty ? renderGlobalEmpty : renderFilterEmpty}
+          renderItem={renderNoteCard}
+          contentContainerStyle={styles.listContent}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
+          initialNumToRender={8}
+          maxToRenderPerBatch={10}
+          windowSize={5}
+          removeClippedSubviews={Platform.OS === 'android'}
+        />
       )}
-    </ScrollView>
+    </View>
   );
 }
 
@@ -263,9 +486,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  contentContainer: {
+  listContent: {
     padding: 16,
-    paddingBottom: 32,
+    paddingBottom: 40,
+  },
+  headerSection: {
+    marginBottom: 8,
   },
   headerBanner: {
     borderRadius: 16,
@@ -273,7 +499,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 14,
     ...Platform.select({
       ios: {
         shadowColor: '#4F46E5',
@@ -299,7 +525,7 @@ const styles = StyleSheet.create({
   },
   appName: {
     color: '#FFFFFF',
-    fontSize: 24,
+    fontSize: 26,
     fontWeight: '800',
   },
   appTagline: {
@@ -307,6 +533,19 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 4,
     lineHeight: 18,
+  },
+  searchBarShortcut: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 48,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    gap: 10,
+    marginBottom: 16,
+  },
+  searchPlaceholder: {
+    fontSize: 13,
   },
   statsRow: {
     flexDirection: 'row',
@@ -329,16 +568,19 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '500',
   },
-  sectionHeader: {
+  sectionTitleRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 10,
-    marginTop: 4,
   },
   sectionTitle: {
     fontSize: 16,
     fontWeight: '700',
+  },
+  resetFilterText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   chipsScroll: {
     gap: 8,
@@ -347,8 +589,8 @@ const styles = StyleSheet.create({
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
     borderRadius: 20,
     borderWidth: 1,
     gap: 6,
@@ -359,24 +601,126 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   chipText: {
-    fontSize: 13,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  chipCountBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 10,
+  },
+  chipCountText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  viewModeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+    marginTop: 6,
+  },
+  segmentedToggle: {
+    flexDirection: 'row',
+    borderRadius: 10,
+    borderWidth: 1,
+    padding: 2,
+  },
+  toggleBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  noteCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 12,
+    marginBottom: 10,
+  },
+  cardContentRow: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'center',
+  },
+  thumbnailContainer: {
+    width: 68,
+    height: 68,
+    borderRadius: 10,
+    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  thumbnailImage: {
+    width: '100%',
+    height: '100%',
+  },
+  cardTextCol: {
+    flex: 1,
+    gap: 4,
+  },
+  cardMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  subjectBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  subjectBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  dateText: {
+    fontSize: 11,
+  },
+  noteExcerpt: {
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  sectionHeaderBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    marginTop: 10,
+    marginBottom: 6,
+    gap: 8,
+  },
+  sectionColorAccent: {
+    width: 4,
+    height: 18,
+    borderRadius: 2,
+  },
+  sectionHeaderText: {
+    fontSize: 15,
+    fontWeight: '700',
+    flex: 1,
+  },
+  sectionBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  sectionBadgeText: {
+    fontSize: 11,
     fontWeight: '600',
   },
   emptyCard: {
     borderRadius: 16,
     borderWidth: 1,
-    padding: 24,
+    padding: 28,
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: 12,
   },
   emptyIconCircle: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     backgroundColor: '#EEF2FF',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 14,
   },
   emptyTitle: {
     fontSize: 16,
@@ -388,10 +732,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
     textAlign: 'center',
-    marginBottom: 18,
-    paddingHorizontal: 8,
+    marginBottom: 20,
+    paddingHorizontal: 12,
   },
-  actionButton: {
+  emptyActionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -399,40 +743,9 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 24,
   },
-  actionButtonText: {
+  emptyActionBtnText: {
     color: '#FFFFFF',
     fontWeight: '700',
     fontSize: 13,
-  },
-  notesList: {
-    gap: 12,
-  },
-  noteCard: {
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  noteHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  subjectBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  subjectBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  noteDate: {
-    fontSize: 12,
-  },
-  noteExcerpt: {
-    fontSize: 13,
-    lineHeight: 18,
   },
 });

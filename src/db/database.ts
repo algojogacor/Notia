@@ -6,7 +6,14 @@ import {
   CREATE_INDEXES,
   DEFAULT_SUBJECTS,
 } from './schema';
-import { Subject, Note, NoteWithSubject, DatabaseStats } from '../types';
+import {
+  Subject,
+  SubjectWithCount,
+  Note,
+  NoteWithSubject,
+  SubjectSection,
+  DatabaseStats,
+} from '../types';
 
 export const SUBJECT_PALETTE = [
   '#6366F1', // Indigo
@@ -55,6 +62,26 @@ export async function getSubjects(db: SQLiteDatabase): Promise<Subject[]> {
   return await db.getAllAsync<Subject>(
     'SELECT * FROM subjects ORDER BY name ASC'
   );
+}
+
+/**
+ * Fetch all subjects along with note count
+ */
+export async function getSubjectsWithCount(
+  db: SQLiteDatabase
+): Promise<SubjectWithCount[]> {
+  return await db.getAllAsync<SubjectWithCount>(`
+    SELECT 
+      s.id, 
+      s.name, 
+      s.color, 
+      s.created_at,
+      COUNT(n.id) as notes_count
+    FROM subjects s
+    LEFT JOIN notes n ON s.id = n.subject_id
+    GROUP BY s.id
+    ORDER BY notes_count DESC, s.name ASC
+  `);
 }
 
 /**
@@ -142,6 +169,32 @@ export async function getNotes(db: SQLiteDatabase): Promise<NoteWithSubject[]> {
 }
 
 /**
+ * Fetch notes grouped by subject for SectionList view
+ */
+export async function getNotesGroupedBySubject(
+  db: SQLiteDatabase
+): Promise<SubjectSection[]> {
+  const notes = await getNotes(db);
+
+  const groupMap = new Map<string, SubjectSection>();
+
+  for (const note of notes) {
+    const key = note.subject_id || 'unassigned';
+    if (!groupMap.has(key)) {
+      groupMap.set(key, {
+        subjectId: key,
+        subjectName: note.subject_name || 'Catatan Umum',
+        subjectColor: note.subject_color || '#6B7280',
+        data: [],
+      });
+    }
+    groupMap.get(key)!.data.push(note);
+  }
+
+  return Array.from(groupMap.values());
+}
+
+/**
  * Fetch a single note by ID
  */
 export async function getNoteById(
@@ -169,15 +222,19 @@ export async function getNoteById(
 }
 
 /**
- * Search notes by query string (searches in extracted_text and subject name)
+ * Advanced multi-criteria search in SQLite:
+ * Searches in extracted_text, subject name, with optional subject filter
  */
-export async function searchNotes(
+export async function searchNotesAdvanced(
   db: SQLiteDatabase,
-  query: string
+  query: string,
+  subjectId?: string | null
 ): Promise<NoteWithSubject[]> {
-  const sanitized = `%${query.trim()}%`;
-  return await db.getAllAsync<NoteWithSubject>(
-    `
+  const trimmed = query.trim();
+  const hasQuery = trimmed.length > 0;
+  const hasSubject = Boolean(subjectId);
+
+  let sql = `
     SELECT 
       n.id, 
       n.image_path, 
@@ -189,11 +246,38 @@ export async function searchNotes(
       s.color as subject_color
     FROM notes n
     LEFT JOIN subjects s ON n.subject_id = s.id
-    WHERE n.extracted_text LIKE ? OR s.name LIKE ?
-    ORDER BY n.date_taken DESC
-  `,
-    [sanitized, sanitized]
-  );
+  `;
+
+  const whereConditions: string[] = [];
+  const params: any[] = [];
+
+  if (hasQuery) {
+    whereConditions.push('(n.extracted_text LIKE ? OR s.name LIKE ?)');
+    params.push(`%${trimmed}%`, `%${trimmed}%`);
+  }
+
+  if (hasSubject) {
+    whereConditions.push('n.subject_id = ?');
+    params.push(subjectId);
+  }
+
+  if (whereConditions.length > 0) {
+    sql += ' WHERE ' + whereConditions.join(' AND ');
+  }
+
+  sql += ' ORDER BY n.date_taken DESC, n.created_at DESC';
+
+  return await db.getAllAsync<NoteWithSubject>(sql, params);
+}
+
+/**
+ * Basic search notes query (backwards compatibility)
+ */
+export async function searchNotes(
+  db: SQLiteDatabase,
+  query: string
+): Promise<NoteWithSubject[]> {
+  return await searchNotesAdvanced(db, query, null);
 }
 
 /**
@@ -217,7 +301,7 @@ export async function getNotesBySubject(
     FROM notes n
     LEFT JOIN subjects s ON n.subject_id = s.id
     WHERE n.subject_id = ?
-    ORDER BY n.date_taken DESC
+    ORDER BY n.date_taken DESC, n.created_at DESC
   `,
     [subjectId]
   );

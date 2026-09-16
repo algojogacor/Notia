@@ -10,6 +10,10 @@ export interface Subject {
   created_at: string;
 }
 
+export interface SubjectWithCount extends Subject {
+  notes_count: number;
+}
+
 export interface Note {
   id: string;
   image_path: string;
@@ -22,6 +26,13 @@ export interface Note {
 export interface NoteWithSubject extends Note {
   subject_name?: string | null;
   subject_color?: string | null;
+}
+
+export interface SubjectSection {
+  subjectId: string;
+  subjectName: string;
+  subjectColor: string;
+  data: NoteWithSubject[];
 }
 
 export interface GroqVisionAnalysisResult {
