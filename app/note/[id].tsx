@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Share,
+  Image,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
@@ -133,10 +134,23 @@ export default function NoteDetailScreen() {
           styles.imageContainer,
           { backgroundColor: colorScheme === 'dark' ? '#1E293B' : '#EEF2FF' },
         ]}>
-        <Ionicons name="image-outline" size={48} color={theme.tint} />
-        <Text style={[styles.imagePathText, { color: theme.subtext }]}>
-          Path: {note.image_path}
-        </Text>
+        {note.image_path.startsWith('file:') ||
+        note.image_path.startsWith('http') ||
+        note.image_path.startsWith('content:') ||
+        note.image_path.startsWith('data:') ? (
+          <Image
+            source={{ uri: note.image_path }}
+            style={styles.fullImage}
+            resizeMode="cover"
+          />
+        ) : (
+          <>
+            <Ionicons name="image-outline" size={48} color={theme.tint} />
+            <Text style={[styles.imagePathText, { color: theme.subtext }]}>
+              Path: {note.image_path}
+            </Text>
+          </>
+        )}
       </View>
 
       {/* Extracted Text Section */}
@@ -251,12 +265,17 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   imageContainer: {
-    height: 220,
+    height: 240,
     borderRadius: 16,
+    overflow: 'hidden',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
     gap: 8,
+  },
+  fullImage: {
+    width: '100%',
+    height: '100%',
   },
   imagePathText: {
     fontSize: 11,

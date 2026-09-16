@@ -1,4 +1,5 @@
 import { type SQLiteDatabase } from 'expo-sqlite';
+import * as FileSystem from 'expo-file-system/legacy';
 import {
   CREATE_SUBJECTS_TABLE,
   CREATE_NOTES_TABLE,
@@ -6,6 +7,19 @@ import {
   DEFAULT_SUBJECTS,
 } from './schema';
 import { Subject, Note, NoteWithSubject, DatabaseStats } from '../types';
+
+export const SUBJECT_PALETTE = [
+  '#6366F1', // Indigo
+  '#3B82F6', // Blue
+  '#10B981', // Emerald
+  '#F59E0B', // Amber
+  '#EC4899', // Pink
+  '#8B5CF6', // Purple
+  '#14B8A6', // Teal
+  '#F97316', // Orange
+  '#06B6D4', // Cyan
+  '#84CC16', // Lime
+];
 
 /**
  * Migrate and initialize database tables and seed defaults
@@ -71,9 +85,40 @@ export async function createSubject(
 
   const created = await getSubjectById(db, subject.id);
   if (!created) {
-    throw new Error(`Failed to retrieve created subject ${subject.id}`);
+    throw new Error(`Gagal membaca mata kuliah yang dibuat: ${subject.id}`);
   }
   return created;
+}
+
+/**
+ * Find subject by name (case-insensitive) or create a new one with a curated color
+ */
+export async function findOrCreateSubject(
+  db: SQLiteDatabase,
+  subjectName: string
+): Promise<Subject> {
+  const trimmed = (subjectName || 'Umum').trim();
+
+  // Search case-insensitive
+  const existing = await db.getFirstAsync<Subject>(
+    'SELECT * FROM subjects WHERE LOWER(name) = LOWER(?) LIMIT 1',
+    [trimmed]
+  );
+
+  if (existing) {
+    return existing;
+  }
+
+  // Create new subject
+  const randomColor =
+    SUBJECT_PALETTE[Math.floor(Math.random() * SUBJECT_PALETTE.length)];
+  const newId = `sub_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
+  return await createSubject(db, {
+    id: newId,
+    name: trimmed,
+    color: randomColor,
+  });
 }
 
 /**
@@ -208,6 +253,62 @@ export async function createNote(
     throw new Error(`Failed to fetch created note ${note.id}`);
   }
   return created;
+}
+
+export interface SaveCapturedNoteParams {
+  imageUri: string;
+  subjectName?: string;
+  extractedText?: string;
+  dateTaken?: string;
+}
+
+/**
+ * Save captured lecture note: stores image locally, resolves subject, and saves note to SQLite
+ */
+export async function saveCapturedNote(
+  db: SQLiteDatabase,
+  params: SaveCapturedNoteParams
+): Promise<NoteWithSubject> {
+  const {
+    imageUri,
+    subjectName = 'Umum',
+    extractedText = '',
+    dateTaken = new Date().toISOString().split('T')[0],
+  } = params;
+
+  // 1. Find or create matching subject
+  const subject = await findOrCreateSubject(db, subjectName);
+
+  // 2. Persist image to app documents directory
+  let persistentPath = imageUri;
+  try {
+    const docDir = FileSystem.documentDirectory;
+    if (docDir) {
+      const notesDir = `${docDir}notes/`;
+      const dirInfo = await FileSystem.getInfoAsync(notesDir);
+      if (!dirInfo.exists) {
+        await FileSystem.makeDirectoryAsync(notesDir, { intermediates: true });
+      }
+
+      const noteUniqueId = `note_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const targetUri = `${notesDir}${noteUniqueId}.jpg`;
+      await FileSystem.copyAsync({ from: imageUri, to: targetUri });
+      persistentPath = targetUri;
+    }
+  } catch (copyErr) {
+    console.warn('Could not copy image to permanent storage, using imageUri:', copyErr);
+    persistentPath = imageUri;
+  }
+
+  // 3. Create note record
+  const noteId = `note_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  return await createNote(db, {
+    id: noteId,
+    image_path: persistentPath,
+    subject_id: subject.id,
+    extracted_text: extractedText,
+    date_taken: dateTaken,
+  });
 }
 
 /**

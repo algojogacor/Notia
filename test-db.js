@@ -1,11 +1,10 @@
 /**
- * Automated Verification Script for Notia SQLite Schema
+ * Automated Verification Script for Notia SQLite Schema & Phase 2 Pipeline
  * Run with: node test-db.js
  */
 const { DatabaseSync } = require('node:sqlite');
-const fs = require('fs');
 
-console.log('--- Notia SQLite Verification Test ---');
+console.log('--- Notia SQLite Verification Test (Phase 1 & Phase 2) ---');
 
 // Initialize in-memory database
 const db = new DatabaseSync(':memory:');
@@ -43,7 +42,7 @@ db.exec(CREATE_SUBJECTS_TABLE);
 db.exec(CREATE_NOTES_TABLE);
 db.exec(CREATE_INDEXES);
 
-console.log('✅ Tables and Indexes created successfully.');
+console.log('✅ 1. Tables and Indexes created successfully.');
 
 // 2. Insert Seed Subjects
 const subjects = [
@@ -58,17 +57,45 @@ for (const s of subjects) {
 }
 
 const subjectsCount = db.prepare('SELECT COUNT(*) as count FROM subjects').get();
-console.log(`✅ Seed subjects inserted: ${subjectsCount.count} records.`);
+console.log(`✅ 2. Seed subjects inserted: ${subjectsCount.count} records.`);
 
-// 3. Insert Sample Note
+// 3. Phase 2 Function Simulation: findOrCreateSubject
+function findOrCreateSubject(name, color = '#F59E0B') {
+  const trimmed = name.trim();
+  const existing = db.prepare('SELECT * FROM subjects WHERE LOWER(name) = LOWER(?) LIMIT 1').get(trimmed);
+  if (existing) {
+    return existing;
+  }
+  const id = `sub_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+  insertSubject.run(id, trimmed, color);
+  return db.prepare('SELECT * FROM subjects WHERE id = ?').get(id);
+}
+
+// 3a. Test case-insensitive existing subject match
+const matchedExisting = findOrCreateSubject('basis data');
+if (matchedExisting.id === 'sub_basdat' && matchedExisting.name === 'Basis Data') {
+  console.log('✅ 3a. Case-insensitive subject matching passed ("basis data" -> "Basis Data").');
+} else {
+  throw new Error('Case-insensitive match failed!');
+}
+
+// 3b. Test auto-creation of new subject
+const createdNew = findOrCreateSubject('Kecerdasan Buatan', '#8B5CF6');
+if (createdNew.name === 'Kecerdasan Buatan' && createdNew.color === '#8B5CF6') {
+  console.log(`✅ 3b. Auto-create new subject passed: "${createdNew.name}" (${createdNew.id}).`);
+} else {
+  throw new Error('Auto-create subject failed!');
+}
+
+// 4. Test Note Insertion & Join
 const insertNote = db.prepare(
   'INSERT INTO notes (id, image_path, subject_id, extracted_text, date_taken) VALUES (?, ?, ?, ?, ?)'
 );
 insertNote.run(
   'note_test_1',
   '/data/photos/note_1.jpg',
-  'sub_matdis',
-  'Teori Graf: Pohon merentang minimum (MST) menggunakan algoritma Kruskal dan Prim.',
+  createdNew.id,
+  'Machine Learning: Supervised learning menggunakan algoritma Decision Tree dan Random Forest.',
   '2026-09-15'
 );
 
@@ -86,26 +113,26 @@ const noteWithSubject = db.prepare(`
   WHERE n.id = ?
 `).get('note_test_1');
 
-console.log('✅ Note with Subject Join Query Result:');
+console.log('✅ 4. Note with Joined Subject Query Result:');
 console.log(noteWithSubject);
 
-// 4. Test Search Query
+// 5. Test Search Query
 const search = db.prepare(`
   SELECT n.id, n.extracted_text, s.name as subject_name
   FROM notes n
   LEFT JOIN subjects s ON n.subject_id = s.id
   WHERE n.extracted_text LIKE ? OR s.name LIKE ?
-`).all('%Kruskal%', '%Kruskal%');
+`).all('%Decision Tree%', '%Decision Tree%');
 
-console.log(`✅ Search result for "Kruskal": ${search.length} found.`);
+console.log(`✅ 5. Search result for "Decision Tree": ${search.length} found.`);
 
-// 5. Test Foreign Key ON DELETE SET NULL
-db.prepare('DELETE FROM subjects WHERE id = ?').run('sub_matdis');
+// 6. Test Foreign Key ON DELETE SET NULL
+db.prepare('DELETE FROM subjects WHERE id = ?').run(createdNew.id);
 const orphanedNote = db.prepare('SELECT id, subject_id FROM notes WHERE id = ?').get('note_test_1');
 if (orphanedNote.subject_id === null) {
-  console.log('✅ Foreign Key ON DELETE SET NULL verified (subject_id is null after subject deletion).');
+  console.log('✅ 6. Foreign Key ON DELETE SET NULL verified (subject_id is null after subject deletion).');
 } else {
   throw new Error('Foreign key ON DELETE SET NULL failed!');
 }
 
-console.log('--- ALL TESTS PASSED SUCCESSFULLY! ---');
+console.log('--- ALL PHASE 2 DATABASE & PIPELINE TESTS PASSED! ---');
