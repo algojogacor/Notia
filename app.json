@@ -2,7 +2,7 @@
   "expo": {
     "name": "Notia",
     "slug": "Notia",
-    "version": "1.0.0",
+    "version": "1.6.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "notia",
@@ -12,7 +12,7 @@
     },
     "android": {
       "package": "com.notia.app",
-      "versionCode": 1,
+      "versionCode": 6,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
