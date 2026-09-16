@@ -14,6 +14,7 @@ import {
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import * as Clipboard from 'expo-clipboard';
+import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 
 import Colors from '@/constants/Colors';
@@ -59,6 +60,11 @@ export default function NoteDetailScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
+              if (Platform.OS !== 'web') {
+                try {
+                  await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+                } catch {}
+              }
               await deleteNote(db, note.id);
               router.back();
             } catch (err) {
@@ -74,6 +80,11 @@ export default function NoteDetailScreen() {
   const handleCopyText = async () => {
     if (!note?.extracted_text) return;
     try {
+      if (Platform.OS !== 'web') {
+        try {
+          await Haptics.selectionAsync();
+        } catch {}
+      }
       await Clipboard.setStringAsync(note.extracted_text);
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);

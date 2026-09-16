@@ -14,6 +14,7 @@ import {
 import { useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import * as ImagePicker from 'expo-image-picker';
+import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 
 import Colors from '@/constants/Colors';
@@ -87,6 +88,11 @@ export default function CameraScreen() {
       });
 
       if (!result.canceled && result.assets && result.assets[0]) {
+        if (Platform.OS !== 'web') {
+          try {
+            await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          } catch {}
+        }
         const asset = result.assets[0];
         setImageUri(asset.uri);
         setImageBase64(asset.base64 || null);
@@ -118,6 +124,11 @@ export default function CameraScreen() {
       });
 
       if (!result.canceled && result.assets && result.assets[0]) {
+        if (Platform.OS !== 'web') {
+          try {
+            await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          } catch {}
+        }
         const asset = result.assets[0];
         setImageUri(asset.uri);
         setImageBase64(asset.base64 || null);
@@ -166,6 +177,12 @@ export default function CameraScreen() {
       clearTimeout(timer1);
       clearTimeout(timer2);
 
+      if (Platform.OS !== 'web') {
+        try {
+          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        } catch {}
+      }
+
       setAiResult(result);
       setEditedText(result.extracted_text);
       setSelectedSubjectName(result.suggested_subject || 'Umum');
@@ -204,6 +221,12 @@ export default function CameraScreen() {
         extractedText: editedText,
         dateTaken: new Date().toISOString().split('T')[0],
       });
+
+      if (Platform.OS !== 'web') {
+        try {
+          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        } catch {}
+      }
 
       setSavedNote(created);
       await loadSubjects(); // refresh subject list

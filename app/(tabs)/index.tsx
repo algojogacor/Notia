@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   StyleSheet,
   View,
@@ -12,10 +12,13 @@ import {
 } from 'react-native';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useRouter, useFocusEffect } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
+import OnboardingModal from '@/components/OnboardingModal';
 import {
   getSubjectsWithCount,
   getNotes,
@@ -30,6 +33,7 @@ import {
 } from '@/src/types';
 
 type ViewMode = 'GROUPED' | 'TIMELINE';
+const ONBOARDING_KEY = '@notia_has_seen_onboarding';
 
 export default function HomeScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -47,6 +51,27 @@ export default function HomeScreen() {
   const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('GROUPED');
   const [refreshing, setRefreshing] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+
+  // Check first-time onboarding
+  useEffect(() => {
+    async function checkOnboarding() {
+      try {
+        const seen = await AsyncStorage.getItem(ONBOARDING_KEY);
+        if (!seen) {
+          setShowOnboarding(true);
+        }
+      } catch {}
+    }
+    checkOnboarding();
+  }, []);
+
+  const handleCloseOnboarding = async () => {
+    setShowOnboarding(false);
+    try {
+      await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
+    } catch {}
+  };
 
   const loadData = useCallback(async () => {
     try {
@@ -246,7 +271,15 @@ export default function HomeScreen() {
           Filter Mata Kuliah
         </Text>
         {selectedSubjectId && (
-          <TouchableOpacity onPress={() => setSelectedSubjectId(null)}>
+          <TouchableOpacity
+            onPress={() => {
+              if (Platform.OS !== 'web') {
+                try {
+                  Haptics.selectionAsync();
+                } catch {}
+              }
+              setSelectedSubjectId(null);
+            }}>
             <Text style={[styles.resetFilterText, { color: theme.tint }]}>
               Reset Filter
             </Text>
@@ -283,7 +316,14 @@ export default function HomeScreen() {
                   borderColor: isSelected ? item.color : theme.border,
                 },
               ]}
-              onPress={() => setSelectedSubjectId(isAll ? null : item.id)}>
+              onPress={() => {
+                if (Platform.OS !== 'web') {
+                  try {
+                    Haptics.selectionAsync();
+                  } catch {}
+                }
+                setSelectedSubjectId(isAll ? null : item.id);
+              }}>
               <View
                 style={[
                   styles.chipDot,
@@ -340,7 +380,14 @@ export default function HomeScreen() {
                 styles.toggleBtn,
                 viewMode === 'GROUPED' && { backgroundColor: theme.tint },
               ]}
-              onPress={() => setViewMode('GROUPED')}>
+              onPress={() => {
+                if (Platform.OS !== 'web') {
+                  try {
+                    Haptics.selectionAsync();
+                  } catch {}
+                }
+                setViewMode('GROUPED');
+              }}>
               <Ionicons
                 name="grid-outline"
                 size={16}
@@ -353,7 +400,14 @@ export default function HomeScreen() {
                 styles.toggleBtn,
                 viewMode === 'TIMELINE' && { backgroundColor: theme.tint },
               ]}
-              onPress={() => setViewMode('TIMELINE')}>
+              onPress={() => {
+                if (Platform.OS !== 'web') {
+                  try {
+                    Haptics.selectionAsync();
+                  } catch {}
+                }
+                setViewMode('TIMELINE');
+              }}>
               <Ionicons
                 name="list-outline"
                 size={16}
@@ -478,6 +532,11 @@ export default function HomeScreen() {
           removeClippedSubviews={Platform.OS === 'android'}
         />
       )}
+
+      <OnboardingModal
+        visible={showOnboarding}
+        onClose={handleCloseOnboarding}
+      />
     </View>
   );
 }
