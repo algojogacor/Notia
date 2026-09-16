@@ -1,5 +1,6 @@
 import { type SQLiteDatabase } from 'expo-sqlite';
 import * as FileSystem from 'expo-file-system/legacy';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { compressLecturePhoto, checkStorageSpaceAvailable } from '../utils/imageOptimizer';
 import {
   CREATE_SUBJECTS_TABLE,
@@ -119,18 +120,27 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
   // Create indexes safely after all columns exist
   await db.execAsync(CREATE_INDEXES);
 
-  // Check if subjects need seed data
-  const existingSubjects = await db.getAllAsync<{ count: number }>(
-    'SELECT COUNT(*) as count FROM subjects'
-  );
-
-  if (existingSubjects[0]?.count === 0) {
-    for (const sub of DEFAULT_SUBJECTS) {
-      await db.runAsync(
-        'INSERT INTO subjects (id, name, color) VALUES (?, ?, ?)',
-        [sub.id, sub.name, sub.color]
+  // Seed default starter subject exactly ONCE on initial setup.
+  // If user intentionally deletes all subjects, do NOT re-seed them!
+  try {
+    const hasSeeded = await AsyncStorage.getItem('@notia_initial_subjects_seeded');
+    if (!hasSeeded) {
+      const existingSubjects = await db.getAllAsync<{ count: number }>(
+        'SELECT COUNT(*) as count FROM subjects'
       );
+
+      if (existingSubjects[0]?.count === 0) {
+        for (const sub of DEFAULT_SUBJECTS) {
+          await db.runAsync(
+            'INSERT INTO subjects (id, name, color) VALUES (?, ?, ?)',
+            [sub.id, sub.name, sub.color]
+          );
+        }
+      }
+      await AsyncStorage.setItem('@notia_initial_subjects_seeded', 'true');
     }
+  } catch (seedErr) {
+    console.warn('Initial subject seed check warning:', seedErr);
   }
 
   // Auto-expunge soft-deleted notes older than 30 days to free storage permanently
@@ -246,6 +256,44 @@ export async function findOrCreateSubject(
     name: trimmed,
     color,
   });
+}
+
+/**
+ * Update an existing subject's name and color
+ */
+export async function updateSubject(
+  db: SQLiteDatabase,
+  subjectId: string,
+  data: { name: string; color: string }
+): Promise<Subject> {
+  const trimmed = data.name.trim();
+  await db.runAsync(
+    'UPDATE subjects SET name = ?, color = ? WHERE id = ?',
+    [trimmed, data.color, subjectId]
+  );
+  const updated = await getSubjectById(db, subjectId);
+  if (!updated) {
+    throw new Error(`Mata kuliah tidak ditemukan: ${subjectId}`);
+  }
+  return updated;
+}
+
+/**
+ * Delete a subject safely:
+ * - Unassigns all notes from this subject (setting subject_id = NULL so notes become 'Catatan Umum' and are NOT deleted)
+ * - Removes topics attached to this subject
+ * - Deletes the subject record
+ */
+export async function deleteSubject(
+  db: SQLiteDatabase,
+  subjectId: string
+): Promise<void> {
+  // Explicitly move notes to unassigned (Catatan Umum) so student's notes are never lost
+  await db.runAsync('UPDATE notes SET subject_id = NULL WHERE subject_id = ?', [subjectId]);
+  // Remove topics under this subject
+  await db.runAsync('DELETE FROM topics WHERE subject_id = ?', [subjectId]);
+  // Remove subject record
+  await db.runAsync('DELETE FROM subjects WHERE id = ?', [subjectId]);
 }
 
 /**

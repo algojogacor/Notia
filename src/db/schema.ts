@@ -74,10 +74,5 @@ CREATE INDEX IF NOT EXISTS idx_notes_queue_pending ON notes(created_at ASC) WHER
 `;
 
 export const DEFAULT_SUBJECTS = [
-  { id: 'sub_matdis', name: 'Matematika Diskrit', color: '#6366F1' },
-  { id: 'sub_alpro', name: 'Algoritma & Pemrograman', color: '#3B82F6' },
-  { id: 'sub_basdat', name: 'Basis Data', color: '#10B981' },
-  { id: 'sub_sisop', name: 'Sistem Operasi', color: '#F59E0B' },
-  { id: 'sub_jarkom', name: 'Jaringan Komputer', color: '#EC4899' },
-  { id: 'sub_ai', name: 'Kecerdasan Buatan', color: '#8B5CF6' },
+  { id: 'sub_umum', name: 'Catatan Umum', color: '#3B82F6' },
 ];

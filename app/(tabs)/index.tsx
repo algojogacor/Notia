@@ -9,6 +9,7 @@ import {
   Image,
   RefreshControl,
   Platform,
+  Alert,
 } from 'react-native';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -31,6 +32,7 @@ import {
   getStudyHeatmapAndStreak,
   resetNoteRetry,
   toggleFavorite,
+  deleteSubject,
 } from '@/src/db/database';
 import EmptyStateIllustration from '@/components/EmptyStateIllustration';
 import { subscribeQueue, triggerQueueProcessing } from '@/src/services/aiQueue';
@@ -557,6 +559,54 @@ export default function HomeScreen() {
             ? selectedSubjectId === null
             : selectedSubjectId === item.id;
 
+          const handleLongPressSubject = () => {
+            if (isAll || isFav) return;
+            if (Platform.OS !== 'web') {
+              try {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              } catch {}
+            }
+            Alert.alert(
+              `Mata Kuliah: ${item.name}`,
+              `Pilih opsi untuk seksi ini (${item.notes_count || 0} catatan):`,
+              [
+                {
+                  text: 'Buka Arsip Seksi',
+                  onPress: () => router.push(`/subject/${item.id}` as any),
+                },
+                {
+                  text: 'Hapus Mata Kuliah',
+                  style: 'destructive',
+                  onPress: () => {
+                    Alert.alert(
+                      `Hapus ${item.name}?`,
+                      'Seluruh lembar catatan tidak akan hilang, melainkan dipindahkan dengan aman ke Catatan Umum.',
+                      [
+                        { text: 'Batal', style: 'cancel' },
+                        {
+                          text: 'Hapus',
+                          style: 'destructive',
+                          onPress: async () => {
+                            try {
+                              await deleteSubject(db, item.id);
+                              if (selectedSubjectId === item.id) {
+                                setSelectedSubjectId(null);
+                              }
+                              loadData();
+                            } catch (err: any) {
+                              Alert.alert('Gagal Menghapus', err.message);
+                            }
+                          },
+                        },
+                      ]
+                    );
+                  },
+                },
+                { text: 'Batal', style: 'cancel' },
+              ]
+            );
+          };
+
           return (
             <TouchableOpacity
               style={[
@@ -566,6 +616,7 @@ export default function HomeScreen() {
                   borderColor: isSelected ? item.color : theme.border,
                 },
               ]}
+              onLongPress={handleLongPressSubject}
               onPress={() => {
                 if (Platform.OS !== 'web') {
                   try {

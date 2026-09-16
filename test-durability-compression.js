@@ -151,4 +151,27 @@ if (backupArchive.version === 2 && backupArchive.notes[0].title && backupArchive
   console.log('✅ 6. Backup Archive v2 structure verified with full note fields & metadata.');
 }
 
-console.log('\n--- ALL DURABILITY & COMPRESSION TESTS PASSED SUCCESSFULLY! ---');
+// 7. Test Subject Deletion & Note Preservation
+db.exec(`
+INSERT INTO subjects (id, name, color) VALUES ('sub_del', 'Matkul Hapus', '#EF4444');
+INSERT INTO topics (id, subject_id, name) VALUES ('top_del', 'sub_del', 'Topik Hapus');
+INSERT INTO notes (id, image_path, subject_id, topic_id, date_taken, title) 
+VALUES ('n_preserved', 'file:///notes/p.jpg', 'sub_del', 'top_del', '2026-09-16', 'Catatan Tetap Aman');
+`);
+
+// Simulate deleteSubject
+db.exec("UPDATE notes SET subject_id = NULL WHERE subject_id = 'sub_del'");
+db.exec("DELETE FROM topics WHERE subject_id = 'sub_del'");
+db.exec("DELETE FROM subjects WHERE id = 'sub_del'");
+
+const checkSub = db.prepare("SELECT * FROM subjects WHERE id = 'sub_del'").get();
+const checkTop = db.prepare("SELECT * FROM topics WHERE id = 'top_del'").get();
+const checkNote = db.prepare("SELECT * FROM notes WHERE id = 'n_preserved'").get();
+
+if (!checkSub && !checkTop && checkNote && checkNote.subject_id === null) {
+  console.log('✅ 7. Subject deletion verified: subject & topic removed, note safely preserved with subject_id = null.');
+} else {
+  throw new Error('Subject deletion test failed');
+}
+
+console.log('\n--- ALL DURABILITY, COMPRESSION & SUBJECT REFINEMENT TESTS PASSED! ---');

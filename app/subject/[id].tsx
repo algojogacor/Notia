@@ -6,10 +6,11 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInUp, FadeOutDown } from 'react-native-reanimated';
 
+import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
 import EmptyStateIllustration from '@/components/EmptyStateIllustration';
-import { getSubjectById, getNotesBySubject, getTopicsBySubject, SUBJECT_PALETTE, softDeleteNote } from '@/src/db/database';
+import { getSubjectById, getNotesBySubject, getTopicsBySubject, SUBJECT_PALETTE, softDeleteNote, deleteSubject } from '@/src/db/database';
 import { NoteWithSubject, Subject, Topic } from '@/src/types';
 import { exportSubjectBookletToPdf } from '@/src/services/pdfBooklet';
 
@@ -126,11 +127,54 @@ export default function SubjectArchiveScreen() {
     ]);
   };
 
+  const handleDeleteSubject = () => {
+    if (!subject) return;
+
+    Alert.alert(
+      `Hapus Mata Kuliah ${subject.name}?`,
+      `Seluruh lembar catatan (${notes.length} lembar) tidak akan dihapus, melainkan dipindahkan secara aman ke 'Catatan Umum'.`,
+      [
+        { text: 'Batal', style: 'cancel' },
+        {
+          text: 'Hapus Seksi',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              if (Platform.OS !== 'web') {
+                try {
+                  await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                } catch {}
+              }
+              await deleteSubject(db, subject.id);
+              router.replace('/(tabs)');
+            } catch (err: any) {
+              Alert.alert('Gagal Menghapus', err.message || 'Terjadi kesalahan saat menghapus mata kuliah.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   if (!subject) return <View style={[styles.container, { backgroundColor: theme.background }]} />;
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <Stack.Screen options={{ title: 'Arsip Seksi', headerBackTitle: 'Beranda' }} />
+      <Stack.Screen 
+        options={{ 
+          title: 'Arsip Seksi', 
+          headerBackTitle: 'Beranda',
+          headerRight: () => (
+            <TouchableOpacity 
+              onPress={handleDeleteSubject}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              style={{ padding: 4 }}
+            >
+              <Ionicons name="trash-outline" size={20} color="#EF4444" />
+            </TouchableOpacity>
+          )
+        }} 
+      />
       <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
         
         {/* Tab Divider Hero */}
