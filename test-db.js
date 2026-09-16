@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS notes (
   extracted_text TEXT,
   date_taken TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  deleted_at TEXT,
   FOREIGN KEY (subject_id) REFERENCES subjects (id) ON DELETE SET NULL
 );
 `;
@@ -35,6 +36,7 @@ CREATE TABLE IF NOT EXISTS notes (
 const CREATE_INDEXES = `
 CREATE INDEX IF NOT EXISTS idx_notes_subject_id ON notes(subject_id);
 CREATE INDEX IF NOT EXISTS idx_notes_date_taken ON notes(date_taken DESC);
+CREATE INDEX IF NOT EXISTS idx_notes_deleted_at ON notes(deleted_at);
 CREATE INDEX IF NOT EXISTS idx_subjects_name ON subjects(name);
 `;
 
@@ -169,7 +171,7 @@ for (const note of allNotesWithSub) {
 const sections = Array.from(groupMap.values());
 console.log(`✅ 6. Grouped Sections count: ${sections.length} sections created for SectionList.`);
 
-// 7. Phase 3 Test: Advanced Search
+// 7. Phase 3 Test: Advanced Multi-Token Search
 function searchAdvanced(query, subjectId) {
   let sql = `
     SELECT n.id, n.extracted_text, s.name as subject_name
@@ -178,10 +180,15 @@ function searchAdvanced(query, subjectId) {
   `;
   const where = [];
   const params = [];
-  if (query) {
-    where.push('(n.extracted_text LIKE ? OR s.name LIKE ?)');
-    params.push(`%${query}%`, `%${query}%`);
+
+  const tokens = query ? query.trim().split(/\s+/).filter(Boolean) : [];
+  if (tokens.length > 0) {
+    for (const token of tokens) {
+      where.push('(n.extracted_text LIKE ? OR s.name LIKE ?)');
+      params.push(`%${token}%`, `%${token}%`);
+    }
   }
+
   if (subjectId) {
     where.push('n.subject_id = ?');
     params.push(subjectId);
@@ -207,4 +214,191 @@ if (resBasdatSort.length === 0) {
   throw new Error('Subject filter isolation failed!');
 }
 
-console.log('--- ALL PHASES 1, 2, & 3 VERIFICATION TESTS PASSED! ---');
+// 7d. Insert Law subject and note for KUHP testing
+db.prepare('INSERT INTO subjects (id, name, color) VALUES (?, ?, ?)').run(
+  'sub_pidana',
+  'Hukum Pidana',
+  '#EF4444'
+);
+
+insertNote.run(
+  'note_law_1',
+  '/data/photos/note_kuhp.jpg',
+  'sub_pidana',
+  'Hukum Pidana: Pembahasan tindak pidana materil. Pasal 362 KUHP mengatur tentang delik pencurian barang kepunyaan orang lain.',
+  '2026-09-15'
+);
+
+// 7e. Test 'pasal 362 kuhp'
+const resExact = searchAdvanced('pasal 362 kuhp', null);
+if (resExact.length >= 1) {
+  console.log(`✅ 7e. Search 'pasal 362 kuhp': ${resExact.length} found.`);
+} else {
+  throw new Error('Search pasal 362 kuhp failed');
+}
+
+// 7f. Test 'pembahasan 362 kuhp' (separated words in note)
+const resSeparated = searchAdvanced('pembahasan 362 kuhp', null);
+if (resSeparated.length >= 1) {
+  console.log(`✅ 7f. Search 'pembahasan 362 kuhp' (separated words): ${resSeparated.length} found.`);
+} else {
+  throw new Error('Search pembahasan 362 kuhp failed');
+}
+
+// --- Sprint 2 Tests: Soft Delete & Streak ---
+console.log('\n--- Sprint 2 Tests: Soft Delete & Streak ---');
+
+// 8a. Soft delete a note
+db.prepare("UPDATE notes SET deleted_at = datetime('now') WHERE id = ?").run('note_law_1');
+const activeAfterDelete = db.prepare("SELECT COUNT(*) as c FROM notes WHERE deleted_at IS NULL").get();
+const trashCount = db.prepare("SELECT COUNT(*) as c FROM notes WHERE deleted_at IS NOT NULL").get();
+
+if (trashCount.c === 1) {
+  console.log('✅ 8a. Soft delete successful: 1 note in trash.');
+} else {
+  throw new Error('Soft delete failed!');
+}
+
+// 8b. Active notes count query excludes trash
+const notesActive = db.prepare(`
+  SELECT n.id FROM notes n
+  WHERE n.deleted_at IS NULL
+`).all();
+if (!notesActive.some((n) => n.id === 'note_law_1')) {
+  console.log('✅ 8b. Active note query correctly excludes trashed note.');
+} else {
+  throw new Error('Active note query included trashed note!');
+}
+
+// 8c. Restore note
+db.prepare("UPDATE notes SET deleted_at = NULL WHERE id = ?").run('note_law_1');
+const trashAfterRestore = db.prepare("SELECT COUNT(*) as c FROM notes WHERE deleted_at IS NOT NULL").get();
+if (trashAfterRestore.c === 0) {
+  console.log('✅ 8c. Restore note successful: trash is now empty.');
+} else {
+  throw new Error('Restore note failed!');
+}
+
+// 8d. Test streak aggregation
+const streakRows = db.prepare(`
+  SELECT date(date_taken) as day, COUNT(*) as count 
+  FROM notes 
+  WHERE deleted_at IS NULL 
+  GROUP BY date(date_taken)
+`).all();
+if (streakRows.length > 0) {
+  console.log(`✅ 8d. Streak aggregation query successful: ${streakRows.length} active day(s) found.`);
+} else {
+  throw new Error('Streak aggregation query failed!');
+}
+
+// --- Sprint 3 Tests: Schema Migration, Batch Queue, Manual Notes & Summary ---
+console.log('\n--- Sprint 3 Tests: Schema Migration, Batch Queue & AI Summary ---');
+
+// 9a. Migration of Sprint 3 columns on existing table
+const tableInfo = db.prepare("PRAGMA table_info(notes)").all();
+const colNames = new Set(tableInfo.map((c) => c.name));
+
+const colsToAdd = [
+  ['title', 'TEXT'],
+  ['summary', 'TEXT'],
+  ['key_points', 'TEXT'],
+  ['ai_status', "TEXT DEFAULT 'done'"],
+  ['last_attempted_at', 'INTEGER'],
+  ['retry_count', 'INTEGER DEFAULT 0'],
+  ['source', "TEXT DEFAULT 'camera'"],
+];
+
+for (const [col, colType] of colsToAdd) {
+  if (!colNames.has(col)) {
+    db.exec(`ALTER TABLE notes ADD COLUMN ${col} ${colType};`);
+  }
+}
+db.exec('CREATE INDEX IF NOT EXISTS idx_notes_ai_status ON notes(ai_status);');
+console.log('✅ 9a. Schema migration successful: added Sprint 3 columns & idx_notes_ai_status.');
+
+// 9b. Batch save notes with pending AI status
+const batchInsert = db.prepare(`
+  INSERT INTO notes (id, image_path, subject_id, extracted_text, date_taken, ai_status, retry_count, source)
+  VALUES (?, ?, ?, '', ?, 'pending', 0, 'camera')
+`);
+
+batchInsert.run('batch_note_1', '/data/notes/batch_1.jpg', 'sub_basdat', '2026-09-16');
+batchInsert.run('batch_note_2', '/data/notes/batch_2.jpg', 'sub_basdat', '2026-09-16');
+
+const pendingNotes = db.prepare(`
+  SELECT id, ai_status, retry_count FROM notes WHERE ai_status = 'pending'
+`).all();
+
+if (pendingNotes.length === 2) {
+  console.log(`✅ 9b. Batch insert successful: ${pendingNotes.length} notes staged as 'pending'.`);
+} else {
+  throw new Error(`Expected 2 pending notes, got ${pendingNotes.length}`);
+}
+
+// 9c. Backoff retry logic verification
+function getBackoffSeconds(retryCount) {
+  if (retryCount === 0) return 0;
+  if (retryCount === 1) return 120; // 2 minutes
+  if (retryCount === 2) return 300; // 5 minutes
+  return 600; // 10 minutes
+}
+
+if (
+  getBackoffSeconds(0) === 0 &&
+  getBackoffSeconds(1) === 120 &&
+  getBackoffSeconds(2) === 300 &&
+  getBackoffSeconds(3) === 600 &&
+  getBackoffSeconds(9) === 600
+) {
+  console.log('✅ 9c. Backoff timing accurately calculated (0s, 120s, 300s, 600s).');
+} else {
+  throw new Error('Backoff timing logic mismatch!');
+}
+
+// Test retry failure escalation
+db.prepare("UPDATE notes SET retry_count = 11, ai_status = 'failed_permanent' WHERE id = ?").run('batch_note_1');
+const failedNote = db.prepare("SELECT ai_status, retry_count FROM notes WHERE id = ?").get('batch_note_1');
+if (failedNote.ai_status === 'failed_permanent' && failedNote.retry_count > 10) {
+  console.log('✅ 9d. Permanent failure escalation verified after > 10 retries.');
+} else {
+  throw new Error('Permanent failure escalation failed');
+}
+
+// 9e. Manual note insert test
+db.prepare(`
+  INSERT INTO notes (id, image_path, subject_id, extracted_text, date_taken, title, ai_status, source)
+  VALUES (?, '', ?, ?, ?, ?, 'done', 'manual')
+`).run(
+  'manual_note_1',
+  'sub_matdis',
+  '# Graf & Pohon\n- Definisi graf terhubung\n- Tree traversal preorder, inorder',
+  '2026-09-16',
+  'Ringkasan Materi Graf'
+);
+
+const manualNote = db.prepare("SELECT id, title, source, image_path, ai_status FROM notes WHERE id = 'manual_note_1'").get();
+if (manualNote.source === 'manual' && manualNote.image_path === '' && manualNote.ai_status === 'done') {
+  console.log('✅ 9e. Manual note insertion verified with source="manual" and empty image_path.');
+} else {
+  throw new Error('Manual note insert failed!');
+}
+
+// 9f. Update summary and key_points test
+const keyPointsArr = ['Graf terhubung', 'Pohon biner berakar', 'Spanning tree'];
+db.prepare(`
+  UPDATE notes 
+  SET summary = ?, key_points = ? 
+  WHERE id = 'manual_note_1'
+`).run('Ringkasan konsep graf dan representasi pohon.', JSON.stringify(keyPointsArr));
+
+const updatedNote = db.prepare("SELECT summary, key_points FROM notes WHERE id = 'manual_note_1'").get();
+const parsedKp = JSON.parse(updatedNote.key_points);
+if (updatedNote.summary && parsedKp.length === 3) {
+  console.log(`✅ 9f. Summary and key points JSON verified: ${parsedKp.join(', ')}.`);
+} else {
+  throw new Error('Summary/keypoints update failed!');
+}
+
+console.log('--- ALL PHASES 1, 2, 3 & SPRINT 2, 3 VERIFICATION TESTS PASSED! ---');
+

@@ -20,6 +20,14 @@ CREATE TABLE IF NOT EXISTS notes (
   extracted_text TEXT,
   date_taken TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  deleted_at TEXT,
+  title TEXT,
+  summary TEXT,
+  key_points TEXT,
+  ai_status TEXT DEFAULT 'done',
+  last_attempted_at INTEGER,
+  retry_count INTEGER DEFAULT 0,
+  source TEXT DEFAULT 'camera',
   FOREIGN KEY (subject_id) REFERENCES subjects (id) ON DELETE SET NULL
 );
 `;
@@ -27,6 +35,8 @@ CREATE TABLE IF NOT EXISTS notes (
 export const CREATE_INDEXES = `
 CREATE INDEX IF NOT EXISTS idx_notes_subject_id ON notes(subject_id);
 CREATE INDEX IF NOT EXISTS idx_notes_date_taken ON notes(date_taken DESC);
+CREATE INDEX IF NOT EXISTS idx_notes_deleted_at ON notes(deleted_at);
+CREATE INDEX IF NOT EXISTS idx_notes_ai_status ON notes(ai_status);
 CREATE INDEX IF NOT EXISTS idx_subjects_name ON subjects(name);
 `;
 

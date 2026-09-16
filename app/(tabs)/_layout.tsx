@@ -51,7 +51,7 @@ export default function TabLayout() {
               <Pressable style={{ marginRight: 16 }}>
                 {({ pressed }) => (
                   <Ionicons
-                    name="information-circle-outline"
+                    name="settings-outline"
                     size={24}
                     color={theme.tint}
                     style={{ opacity: pressed ? 0.5 : 1 }}

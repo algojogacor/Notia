@@ -19,12 +19,18 @@ import { Ionicons } from '@expo/vector-icons';
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
 import OnboardingModal from '@/components/OnboardingModal';
+import AddSubjectModal from '@/components/AddSubjectModal';
+import StreakCard from '@/components/StreakCard';
+import ManualNoteSheet from '@/components/ManualNoteSheet';
 import {
   getSubjectsWithCount,
   getNotes,
   getNotesGroupedBySubject,
   getDatabaseStats,
+  getStudyHeatmapAndStreak,
+  resetNoteRetry,
 } from '@/src/db/database';
+import { subscribeQueue, triggerQueueProcessing } from '@/src/services/aiQueue';
 import {
   calculateAcademicImpact,
   shareNotiaApp,
@@ -35,6 +41,7 @@ import {
   SubjectSection,
   DatabaseStats,
   AcademicImpactStats,
+  StudyStreakStats,
 } from '@/src/types';
 
 type ViewMode = 'GROUPED' | 'TIMELINE';
@@ -50,6 +57,12 @@ export default function HomeScreen() {
     notesCount: 0,
     subjectsCount: 0,
   });
+  const [streakStats, setStreakStats] = useState<StudyStreakStats>({
+    streak: 0,
+    bestStreak: 0,
+    heatmap: [],
+    heatmapTotal: 0,
+  });
   const [academicStats, setAcademicStats] = useState<AcademicImpactStats>({
     notesCount: 0,
     subjectsCount: 0,
@@ -57,6 +70,7 @@ export default function HomeScreen() {
     hoursSaved: '0.0',
     activeDaysCount: 0,
   });
+  const [showAddSubjectModal, setShowAddSubjectModal] = useState(false);
   const [subjectsWithCount, setSubjectsWithCount] = useState<SubjectWithCount[]>([]);
   const [allNotes, setAllNotes] = useState<NoteWithSubject[]>([]);
   const [groupedSections, setGroupedSections] = useState<SubjectSection[]>([]);
@@ -64,6 +78,7 @@ export default function HomeScreen() {
   const [viewMode, setViewMode] = useState<ViewMode>('GROUPED');
   const [refreshing, setRefreshing] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showManualNote, setShowManualNote] = useState(false);
 
   // Check first-time onboarding
   useEffect(() => {
@@ -87,23 +102,39 @@ export default function HomeScreen() {
 
   const loadData = useCallback(async () => {
     try {
-      const [loadedStats, loadedSubs, loadedNotes, loadedGrouped, loadedImpact] =
-        await Promise.all([
-          getDatabaseStats(db),
-          getSubjectsWithCount(db),
-          getNotes(db),
-          getNotesGroupedBySubject(db),
-          calculateAcademicImpact(db),
-        ]);
+      const [
+        loadedStats,
+        loadedSubs,
+        loadedNotes,
+        loadedGrouped,
+        loadedImpact,
+        loadedStreak,
+      ] = await Promise.all([
+        getDatabaseStats(db),
+        getSubjectsWithCount(db),
+        getNotes(db),
+        getNotesGroupedBySubject(db),
+        calculateAcademicImpact(db),
+        getStudyHeatmapAndStreak(db),
+      ]);
       setStats(loadedStats);
       setSubjectsWithCount(loadedSubs);
       setAllNotes(loadedNotes);
       setGroupedSections(loadedGrouped);
       setAcademicStats(loadedImpact);
+      setStreakStats(loadedStreak);
     } catch (err) {
       console.error('Error loading dashboard data:', err);
     }
   }, [db]);
+
+  // Subscribe to background AI queue updates
+  useEffect(() => {
+    const unsubscribe = subscribeQueue(() => {
+      loadData();
+    });
+    return unsubscribe;
+  }, [loadData]);
 
   useFocusEffect(
     useCallback(() => {
@@ -134,7 +165,7 @@ export default function HomeScreen() {
     return subjectsWithCount.find((s) => s.id === selectedSubjectId) || null;
   }, [subjectsWithCount, selectedSubjectId]);
 
-  // Render Note Card
+  // Render Note Card — Living Notebook style
   const renderNoteCard = useCallback(
     ({ item }: { item: NoteWithSubject }) => {
       const hasValidImage =
@@ -144,6 +175,23 @@ export default function HomeScreen() {
           item.image_path.startsWith('content:') ||
           item.image_path.startsWith('data:'));
 
+      const spineColor = item.subject_color || theme.tint;
+      const dogEarBehind = theme.background;
+      const dogEarFlap = colorScheme === 'dark' ? '#302a21' : '#ece4d3';
+
+      // Extract first line as title if available (e.g. "Sumber Hukum Formil")
+      const lines = item.extracted_text
+        ? item.extracted_text.split('\n').map((l) => l.trim()).filter(Boolean)
+        : [];
+      const noteTitle = item.title || lines[0] || item.subject_name || 'Catatan Kuliah';
+      const snippetText = lines.length > 1
+        ? lines.slice(1).join(' ')
+        : (item.extracted_text || 'Belum ada transkripsi materi.');
+
+      const isPending = item.ai_status === 'pending';
+      const isProcessing = item.ai_status === 'processing';
+      const isFailedPermanent = item.ai_status === 'failed_permanent';
+
       return (
         <TouchableOpacity
           style={[
@@ -152,12 +200,30 @@ export default function HomeScreen() {
           ]}
           activeOpacity={0.7}
           onPress={() => router.push(`/note/${item.id}`)}>
+          {/* Subject spine — colored tape on notebook edge */}
+          <View
+            style={[
+              styles.spineStrip,
+              { backgroundColor: spineColor },
+            ]}
+          />
+
+          {/* Dog-ear — visual placeholder (folded page corner in top-right) */}
+          <View style={styles.dogEarContainer}>
+            <View
+              style={[
+                styles.dogEarCutout,
+                { borderTopColor: dogEarBehind, borderLeftColor: dogEarFlap },
+              ]}
+            />
+          </View>
+
           <View style={styles.cardContentRow}>
-            {/* Thumbnail */}
+            {/* Thumbnail — slightly taller, portrait feel */}
             <View
               style={[
                 styles.thumbnailContainer,
-                { backgroundColor: colorScheme === 'dark' ? '#1E293B' : '#EEF2FF' },
+                { backgroundColor: colorScheme === 'dark' ? '#302a21' : '#f1eadd' },
               ]}>
               {hasValidImage ? (
                 <Image
@@ -165,6 +231,8 @@ export default function HomeScreen() {
                   style={styles.thumbnailImage}
                   resizeMode="cover"
                 />
+              ) : item.source === 'manual' ? (
+                <Ionicons name="pencil" size={24} color={theme.primary} />
               ) : (
                 <Ionicons name="document-text" size={28} color={theme.tint} />
               )}
@@ -172,13 +240,74 @@ export default function HomeScreen() {
 
             {/* Note Details */}
             <View style={styles.cardTextCol}>
-              <View style={styles.cardMetaRow}>
+              {/* Title — serif feel, slightly larger */}
+              <Text
+                numberOfLines={1}
+                style={[styles.noteTitle, { color: theme.text }]}>
+                {noteTitle}
+              </Text>
+
+              {/* Status Badge if in AI queue */}
+              {isPending && (
                 <View
                   style={[
-                    styles.subjectBadge,
-                    { backgroundColor: item.subject_color || theme.tint },
+                    styles.aiStatusBadge,
+                    { backgroundColor: 'rgba(176, 124, 36, 0.12)', borderColor: theme.amber },
                   ]}>
-                  <Text style={styles.subjectBadgeText}>
+                  <Ionicons name="time-outline" size={11} color={theme.amber} />
+                  <Text style={[styles.aiStatusBadgeText, { color: theme.amber }]}>
+                    {(item.retry_count || 0) > 0
+                      ? 'Sedang menunggu AI, akan dicoba lagi...'
+                      : 'Sedang menunggu AI...'}
+                  </Text>
+                </View>
+              )}
+
+              {isProcessing && (
+                <View
+                  style={[
+                    styles.aiStatusBadge,
+                    { backgroundColor: 'rgba(76, 70, 137, 0.12)', borderColor: theme.primary },
+                  ]}>
+                  <Ionicons name="sync" size={11} color={theme.primary} />
+                  <Text style={[styles.aiStatusBadgeText, { color: theme.primary }]}>
+                    Sedang menganalisis tulisan...
+                  </Text>
+                </View>
+              )}
+
+              {isFailedPermanent && (
+                <TouchableOpacity
+                  style={[
+                    styles.aiStatusBadge,
+                    { backgroundColor: 'rgba(220, 38, 38, 0.12)', borderColor: '#DC2626' },
+                  ]}
+                  onPress={async () => {
+                    await resetNoteRetry(db, item.id);
+                    triggerQueueProcessing();
+                    loadData();
+                  }}>
+                  <Ionicons name="alert-circle-outline" size={11} color="#DC2626" />
+                  <Text style={[styles.aiStatusBadgeText, { color: '#DC2626' }]}>
+                    Gagal diproses · Coba Lagi Manual
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              {/* Snippet — italic serif feel, like a librarian's pencil note */}
+              <Text
+                numberOfLines={isPending || isProcessing ? 1 : 2}
+                style={[styles.noteExcerpt, { color: theme.subtext }]}>
+                {snippetText}
+              </Text>
+
+              {/* Bottom meta row */}
+              <View style={styles.cardMetaRow}>
+                <View style={styles.chipBadge}>
+                  <View
+                    style={[styles.chipDotSmall, { backgroundColor: spineColor }]}
+                  />
+                  <Text style={[styles.chipBadgeText, { color: theme.subtext }]}>
                     {item.subject_name || 'Umum'}
                   </Text>
                 </View>
@@ -186,25 +315,12 @@ export default function HomeScreen() {
                   {item.date_taken}
                 </Text>
               </View>
-
-              <Text
-                numberOfLines={2}
-                style={[styles.noteExcerpt, { color: theme.text }]}>
-                {item.extracted_text || 'Tidak ada teks terdeteksi.'}
-              </Text>
             </View>
-
-            <Ionicons
-              name="chevron-forward"
-              size={18}
-              color={theme.tabIconDefault}
-              style={{ alignSelf: 'center' }}
-            />
           </View>
         </TouchableOpacity>
       );
     },
-    [theme, colorScheme, router]
+    [theme, colorScheme, router, db, loadData]
   );
 
   // List Header Component
@@ -219,7 +335,7 @@ export default function HomeScreen() {
             Semua catatan kuliah terorganisir rapi untuk UTS & UAS.
           </Text>
         </View>
-        <Ionicons name="sparkles" size={32} color="#FDE047" />
+        <Ionicons name="sparkles" size={32} color="#d5a24a" />
       </View>
 
       {/* Quick Search Bar Shortcut */}
@@ -257,7 +373,7 @@ export default function HomeScreen() {
             styles.statCard,
             { backgroundColor: theme.card, borderColor: theme.border },
           ]}>
-          <Ionicons name="school" size={20} color="#10B981" />
+          <Ionicons name="school" size={20} color={theme.success} />
           <Text style={[styles.statValue, { color: theme.text }]}>
             {stats.subjectsCount}
           </Text>
@@ -279,79 +395,75 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      {/* Academic Impact & Growth Share Banner */}
-      <View
-        style={[
-          styles.impactBanner,
-          {
-            backgroundColor:
-              colorScheme === 'dark' ? '#1E293B' : '#EFF6FF',
-            borderColor:
-              colorScheme === 'dark' ? '#334155' : '#BFDBFE',
-          },
-        ]}>
-        <View style={styles.impactContent}>
-          <View style={styles.impactIconCircle}>
-            <Ionicons name="sparkles" size={18} color="#2563EB" />
-          </View>
-          <View style={styles.impactTextCol}>
-            <Text
-              style={[
-                styles.impactTitle,
-                { color: colorScheme === 'dark' ? '#F8FAFC' : '#1E3A8A' },
-              ]}>
-              {stats.notesCount > 0
-                ? `⚡ Hemat ~${academicStats.hoursSaved} Jam Waktu Belajar!`
-                : '⚡ Siap Hadapi UTS/UAS Tanpa Panik'}
-            </Text>
-            <Text
-              style={[
-                styles.impactSub,
-                { color: colorScheme === 'dark' ? '#94A3B8' : '#3B82F6' },
-              ]}>
-              {stats.notesCount > 0
-                ? `${academicStats.notesCount} catatan tersusun rapi di ${academicStats.subjectsCount} matkul.`
-                : 'Foto catatanmu & biarkan AI Vision mengelompokkannya.'}
-            </Text>
-          </View>
-        </View>
-
-        <TouchableOpacity
-          style={styles.impactShareBtn}
-          activeOpacity={0.8}
-          onPress={() => {
-            if (Platform.OS !== 'web') {
-              try {
-                Haptics.selectionAsync();
-              } catch {}
-            }
-            shareNotiaApp(academicStats);
-          }}>
-          <Ionicons name="share-social-outline" size={14} color="#FFFFFF" />
-          <Text style={styles.impactShareText}>Bagikan</Text>
-        </TouchableOpacity>
-      </View>
+      {/* Rekam Belajar StreakCard (Heatmap, Flame Streak, Spotify Wrapped Share) */}
+      <StreakCard
+        stats={streakStats}
+        colorScheme={colorScheme}
+        totalNotesCount={stats.notesCount}
+        totalSubjectsCount={stats.subjectsCount}
+        subjects={subjectsWithCount}
+      />
 
       {/* Mata Kuliah Filter Carousel */}
       <View style={styles.sectionTitleRow}>
         <Text style={[styles.sectionTitle, { color: theme.text }]}>
-          Filter Mata Kuliah
+          Mata Kuliah
         </Text>
-        {selectedSubjectId && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          {selectedSubjectId && (
+            <TouchableOpacity
+              onPress={() => {
+                if (Platform.OS !== 'web') {
+                  try {
+                    Haptics.selectionAsync();
+                  } catch {}
+                }
+                setSelectedSubjectId(null);
+              }}>
+              <Text style={[styles.resetFilterText, { color: theme.tint }]}>
+                Reset Filter
+              </Text>
+            </TouchableOpacity>
+          )}
+
           <TouchableOpacity
+            style={[
+              styles.addSubjectBtn,
+              { backgroundColor: theme.primary, borderColor: theme.primary },
+            ]}
             onPress={() => {
               if (Platform.OS !== 'web') {
                 try {
                   Haptics.selectionAsync();
                 } catch {}
               }
-              setSelectedSubjectId(null);
+              setShowManualNote(true);
             }}>
-            <Text style={[styles.resetFilterText, { color: theme.tint }]}>
-              Reset Filter
+            <Ionicons name="pencil" size={13} color="#FFFFFF" />
+            <Text style={[styles.addSubjectBtnText, { color: '#FFFFFF' }]}>
+              Tulis Lembar
             </Text>
           </TouchableOpacity>
-        )}
+
+          <TouchableOpacity
+            style={[
+              styles.addSubjectBtn,
+              { backgroundColor: theme.card, borderColor: theme.border },
+            ]}
+            onPress={() => {
+              if (Platform.OS !== 'web') {
+                try {
+                  Haptics.selectionAsync();
+                } catch {}
+              }
+              setShowAddSubjectModal(true);
+            }}>
+            <Ionicons name="add-circle" size={15} color={theme.tint} />
+            <Text style={[styles.addSubjectBtnText, { color: theme.tint }]}>
+              + Matkul
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <FlatList
@@ -604,11 +716,39 @@ export default function HomeScreen() {
         visible={showOnboarding}
         onClose={handleCloseOnboarding}
       />
+
+      <AddSubjectModal
+        visible={showAddSubjectModal}
+        onClose={() => setShowAddSubjectModal(false)}
+        onSubjectCreated={() => loadData()}
+      />
+
+      <ManualNoteSheet
+        visible={showManualNote}
+        onClose={() => setShowManualNote(false)}
+        onSaved={() => loadData()}
+        presetSubjectId={selectedSubjectId}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  aiStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    gap: 4,
+    marginVertical: 4,
+  },
+  aiStatusBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+  },
   container: {
     flex: 1,
   },
@@ -758,6 +898,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
+  addSubjectBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  addSubjectBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
   chipsScroll: {
     gap: 8,
     paddingBottom: 16,
@@ -808,23 +961,65 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   noteCard: {
-    borderRadius: 14,
+    borderRadius: 12,
     borderWidth: 1,
     padding: 12,
+    paddingLeft: 15,   // extra room for spine strip
     marginBottom: 10,
+    overflow: 'hidden',
+    position: 'relative' as const,
+    // warm page-on-desk shadow
+    ...Platform.select({
+      ios: {
+        shadowColor: '#1a1410',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.06,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
+  },
+  spineStrip: {
+    position: 'absolute' as const,
+    left: 0,
+    top: 10,
+    bottom: 10,
+    width: 3,
+    borderTopRightRadius: 2,
+    borderBottomRightRadius: 2,
+  },
+  dogEarContainer: {
+    position: 'absolute' as const,
+    top: 0,
+    right: 0,
+    width: 14,
+    height: 14,
+    overflow: 'hidden',
+    zIndex: 2,
+  },
+  dogEarCutout: {
+    width: 0,
+    height: 0,
+    borderStyle: 'solid' as const,
+    borderTopWidth: 14,
+    borderLeftWidth: 14,
   },
   cardContentRow: {
     flexDirection: 'row',
     gap: 12,
-    alignItems: 'center',
+    alignItems: 'stretch',
   },
   thumbnailContainer: {
-    width: 68,
-    height: 68,
-    borderRadius: 10,
+    width: 72,
+    height: 84,    // taller, portrait feel
+    borderRadius: 8,
     overflow: 'hidden',
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.06)',
   },
   thumbnailImage: {
     width: '100%',
@@ -832,12 +1027,40 @@ const styles = StyleSheet.create({
   },
   cardTextCol: {
     flex: 1,
-    gap: 4,
+    justifyContent: 'center',
+    gap: 3,
+  },
+  noteTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    letterSpacing: 0.1,
+  },
+  noteExcerpt: {
+    fontSize: 12.5,
+    lineHeight: 18,
+    fontStyle: 'italic',
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
   },
   cardMetaRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginTop: 4,
+  },
+  chipBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  chipDotSmall: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  chipBadgeText: {
+    fontSize: 11,
+    fontWeight: '500',
   },
   subjectBadge: {
     paddingHorizontal: 8,
@@ -851,10 +1074,6 @@ const styles = StyleSheet.create({
   },
   dateText: {
     fontSize: 11,
-  },
-  noteExcerpt: {
-    fontSize: 12,
-    lineHeight: 17,
   },
   sectionHeaderBar: {
     flexDirection: 'row',
