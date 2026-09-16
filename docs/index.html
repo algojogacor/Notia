@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="id" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Notia — Smart Lecture Notes Organizer untuk Mahasiswa Indonesia</title>
+  <meta name="description" content="Auto-organisir foto catatan kuliah pakai AI vision. Local-first, bebas galeri berantakan, siap hadapi UTS dan UAS tanpa panik." />
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#EFF6FF',
+              100: '#DBEAFE',
+              500: '#3B82F6',
+              600: '#2563EB',
+              700: '#1D4ED8',
+              900: '#1E3A8A',
+            },
+            slate: {
+              850: '#151F32',
+              900: '#0F172A',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    .glass-card {
+      background: rgba(255, 255, 255, 0.85);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+  </style>
+</head>
+<body class="bg-slate-900 text-slate-100 antialiased selection:bg-brand-600 selection:text-white">
+
+  <!-- Navigation Bar -->
+  <nav class="fixed top-0 left-0 right-0 z-50 bg-slate-900/80 backdrop-blur-md border-b border-slate-800">
+    <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-brand-600 flex items-center justify-center font-bold text-white shadow-lg shadow-brand-500/30">
+          📚
+        </div>
+        <span class="text-xl font-extrabold tracking-tight text-white">Notia</span>
+        <span class="text-xs px-2.5 py-0.5 rounded-full bg-brand-500/20 text-brand-400 font-semibold border border-brand-500/30">v1.0 MVP</span>
+      </div>
+
+      <div class="hidden md:flex items-center space-x-8 text-sm font-medium text-slate-300">
+        <a href="#features" class="hover:text-white transition-colors">Fitur</a>
+        <a href="#how-it-works" class="hover:text-white transition-colors">Cara Kerja</a>
+        <a href="#tech" class="hover:text-white transition-colors">Teknologi</a>
+        <a href="#faq" class="hover:text-white transition-colors">FAQ</a>
+      </div>
+
+      <div class="flex items-center space-x-3">
+        <a href="https://github.com/aryarizky/notia" target="_blank" class="px-4 py-2 text-sm font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 transition flex items-center space-x-2">
+          <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          <span class="hidden sm:inline">GitHub</span>
+        </a>
+        <a href="#download" class="px-4 py-2 text-sm font-semibold rounded-lg bg-brand-600 hover:bg-brand-500 text-white shadow-lg shadow-brand-600/30 transition">
+          Unduh APK
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero Section -->
+  <section class="pt-32 pb-20 px-6 relative overflow-hidden">
+    <div class="absolute inset-0 bg-gradient-to-b from-brand-600/10 via-transparent to-transparent pointer-events-none"></div>
+    <div class="max-w-5xl mx-auto text-center relative z-10">
+      
+      <div class="inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-xs font-semibold text-brand-400 mb-6">
+        <span class="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        <span>Built for Indonesian University Students</span>
+      </div>
+
+      <h1 class="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight text-white leading-tight mb-6">
+        Auto-Organisir Foto Catatan Kuliah <br class="hidden sm:block" />
+        <span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-brand-500 to-indigo-400">
+          Pakai AI Vision Lokal.
+        </span>
+      </h1>
+
+      <p class="text-lg sm:text-xl text-slate-400 max-w-2xl mx-auto mb-10 leading-relaxed">
+        Foto catatan kuliah bercampur dengan ribuan meme di galeri? <br />
+        Cukup jepret foto binder, whiteboard, atau slide dosen — Notia otomatis membaca teks dan mengelompokkannya per mata kuliah.
+      </p>
+
+      <!-- CTA Buttons -->
+      <div class="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16" id="download">
+        <a href="https://github.com/aryarizky/notia/releases" class="w-full sm:w-auto px-8 py-4 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-bold text-base shadow-xl shadow-brand-600/40 transition flex items-center justify-center space-x-3">
+          <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M17.523 15.3414c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.551 0 .9993.4482.9993.9993.0001.5511-.4483.9997-.9993.9997m-11.046 0c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.5511 0 .9993.4482.9993.9993 0 .5511-.4482.9997-.9993.9997m11.4045-6.02l1.996-3.456c.1424-.2467.0601-.5603-.1866-.7027-.2468-.1424-.5604-.0601-.7028.1866l-2.023 3.503c-1.543-.7027-3.273-1.0935-5.116-1.0935-1.843 0-3.573.3908-5.116 1.0935L4.708 4.3516c-.1424-.2467-.456-.329-.7028-.1866-.2467.1424-.329.456-.1866.7027l1.996 3.456C2.399 10.231.0001 13.791.0001 17.883h24c0-4.092-2.399-7.652-5.8715-9.5616"/></svg>
+          <span>Unduh APK Android (Gratis)</span>
+        </a>
+        <a href="https://github.com/aryarizky/notia" target="_blank" class="w-full sm:w-auto px-8 py-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-base border border-slate-700 transition flex items-center justify-center space-x-2">
+          <span>Explore Source Code</span>
+        </a>
+      </div>
+
+      <!-- App Mockup Preview -->
+      <div class="relative max-w-sm mx-auto">
+        <div class="rounded-3xl border-4 border-slate-700 bg-slate-850 p-4 shadow-2xl shadow-brand-500/10">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-3 mb-3">
+            <div class="flex items-center space-x-2">
+              <span class="text-xs font-bold text-white">Notia</span>
+              <span class="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-semibold">100% Local-First</span>
+            </div>
+            <span class="text-xs text-slate-400">Semester Ganjil</span>
+          </div>
+
+          <!-- Mock Stats -->
+          <div class="grid grid-cols-3 gap-2 mb-3">
+            <div class="bg-slate-800 rounded-lg p-2 text-center border border-slate-700/60">
+              <div class="text-xs text-slate-400">Catatan</div>
+              <div class="text-sm font-bold text-white">24</div>
+            </div>
+            <div class="bg-slate-800 rounded-lg p-2 text-center border border-slate-700/60">
+              <div class="text-xs text-slate-400">Matkul</div>
+              <div class="text-sm font-bold text-emerald-400">6</div>
+            </div>
+            <div class="bg-slate-800 rounded-lg p-2 text-center border border-slate-700/60">
+              <div class="text-xs text-slate-400">Hemat</div>
+              <div class="text-sm font-bold text-amber-400">~2.4 Jam</div>
+            </div>
+          </div>
+
+          <!-- Mock Note Card -->
+          <div class="bg-slate-800 rounded-xl p-3 border border-slate-700/70 text-left mb-2">
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="text-xs font-semibold px-2 py-0.5 rounded bg-blue-500/20 text-blue-400">Basis Data</span>
+              <span class="text-[10px] text-slate-400">Baru saja</span>
+            </div>
+            <p class="text-xs text-slate-200 font-mono line-clamp-2">
+              "Normalisasi 3NF: Setiap non-prime attribute tidak boleh memiliki ketergantungan transitif..."
+            </p>
+          </div>
+
+          <div class="bg-slate-800 rounded-xl p-3 border border-slate-700/70 text-left">
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="text-xs font-semibold px-2 py-0.5 rounded bg-purple-500/20 text-purple-400">Kalkulus II</span>
+              <span class="text-[10px] text-slate-400">Kemarin</span>
+            </div>
+            <p class="text-xs text-slate-200 font-mono line-clamp-2">
+              "Integral parsial ∫ u dv = uv - ∫ v du dengan metode substitusi..."
+            </p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Features Section -->
+  <section id="features" class="py-20 px-6 border-t border-slate-800 bg-slate-900/50">
+    <div class="max-w-6xl mx-auto">
+      <div class="text-center mb-16">
+        <h2 class="text-xs font-bold uppercase tracking-widest text-brand-400 mb-2">Dirancang Khusus Mahasiswa</h2>
+        <h3 class="text-3xl sm:text-4xl font-extrabold text-white">Semua Kebutuhan Ujian dalam Satu Aplikasi</h3>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <!-- Feature 1 -->
+        <div class="p-8 rounded-2xl bg-slate-800/60 border border-slate-700/80 hover:border-brand-500/50 transition">
+          <div class="w-12 h-12 rounded-xl bg-brand-500/20 text-brand-400 flex items-center justify-center text-2xl mb-6">
+            📷
+          </div>
+          <h4 class="text-xl font-bold text-white mb-3">Multimodal AI OCR</h4>
+          <p class="text-slate-400 text-sm leading-relaxed">
+            Ditenagai Groq Vision (<code class="text-brand-300 text-xs">llama-3.2-11b</code>), Notia mengenali tulisan tangan binder yang berantakan, papan tulis spidol, hingga slide proyektor dosen.
+          </p>
+        </div>
+
+        <!-- Feature 2 -->
+        <div class="p-8 rounded-2xl bg-slate-800/60 border border-slate-700/80 hover:border-brand-500/50 transition">
+          <div class="w-12 h-12 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-2xl mb-6">
+            🏷️
+          </div>
+          <h4 class="text-xl font-bold text-white mb-3">Auto-Kategorisasi Matkul</h4>
+          <p class="text-slate-400 text-sm leading-relaxed">
+            Tidak perlu memindahkan folder satu per satu. AI mendeteksi topik kuliah dari rumus atau teks dan otomatis memasukkannya ke mata kuliah yang sesuai.
+          </p>
+        </div>
+
+        <!-- Feature 3 -->
+        <div class="p-8 rounded-2xl bg-slate-800/60 border border-slate-700/80 hover:border-brand-500/50 transition">
+          <div class="w-12 h-12 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-2xl mb-6">
+            ⚡
+          </div>
+          <h4 class="text-xl font-bold text-white mb-3">Pencarian Kilat SQLite</h4>
+          <p class="text-slate-400 text-sm leading-relaxed">
+            Database lokal relasional dengan indexing multi-kriteria. Cari rumus atau teori spesifik jam 2 pagi sebelum ujian dalam waktu di bawah 1 milidetik.
+          </p>
+        </div>
+
+        <!-- Feature 4 -->
+        <div class="p-8 rounded-2xl bg-slate-800/60 border border-slate-700/80 hover:border-brand-500/50 transition">
+          <div class="w-12 h-12 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-2xl mb-6">
+            🔒
+          </div>
+          <h4 class="text-xl font-bold text-white mb-3">100% Local-First Privacy</h4>
+          <p class="text-slate-400 text-sm leading-relaxed">
+            Foto catatan dan data belajar tersimpan di penyimpanan internal smartphone. Tanpa tracking cookies, tanpa server pihak ketiga yang menyimpan fotomu.
+          </p>
+        </div>
+
+        <!-- Feature 5 -->
+        <div class="p-8 rounded-2xl bg-slate-800/60 border border-slate-700/80 hover:border-brand-500/50 transition">
+          <div class="w-12 h-12 rounded-xl bg-pink-500/20 text-pink-400 flex items-center justify-center text-2xl mb-6">
+            📳
+          </div>
+          <h4 class="text-xl font-bold text-white mb-3">Haptic Tactile Polish</h4>
+          <p class="text-slate-400 text-sm leading-relaxed">
+            Umpan balik getar taktil responsif saat memotret, menyalin ke clipboard, dan menyelesaikan klasifikasi catatan, memberi pengalaman penggunaan yang solid.
+          </p>
+        </div>
+
+        <!-- Feature 6 -->
+        <div class="p-8 rounded-2xl bg-slate-800/60 border border-slate-700/80 hover:border-brand-500/50 transition">
+          <div class="w-12 h-12 rounded-xl bg-teal-500/20 text-teal-400 flex items-center justify-center text-2xl mb-6">
+            📱
+          </div>
+          <h4 class="text-xl font-bold text-white mb-3">Ukuran Ringan (&lt; 50MB)</h4>
+          <p class="text-slate-400 text-sm leading-relaxed">
+            Dioptimalkan agar tidak membebani memori HP mahasiswa. Bundling efisien tanpa library berlebih, berjalan mulus di HP Android spesifikasi standar.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- How It Works -->
+  <section id="how-it-works" class="py-20 px-6 border-t border-slate-800">
+    <div class="max-w-4xl mx-auto text-center mb-16">
+      <h2 class="text-xs font-bold uppercase tracking-widest text-brand-400 mb-2">Zero Friction Flow</h2>
+      <h3 class="text-3xl sm:text-4xl font-extrabold text-white">Cara Pakai Notia dalam 3 Langkah</h3>
+    </div>
+
+    <div class="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-8">
+      <div class="text-center p-6">
+        <div class="w-12 h-12 mx-auto rounded-full bg-slate-800 border border-slate-700 text-brand-400 font-extrabold flex items-center justify-center mb-4 text-lg">1</div>
+        <h4 class="text-lg font-bold text-white mb-2">Jepret Catatan</h4>
+        <p class="text-slate-400 text-sm">Ambil foto buku binder, coretan papan tulis, atau slide materi dari kursi kuliah.</p>
+      </div>
+
+      <div class="text-center p-6">
+        <div class="w-12 h-12 mx-auto rounded-full bg-slate-800 border border-slate-700 text-brand-400 font-extrabold flex items-center justify-center mb-4 text-lg">2</div>
+        <h4 class="text-lg font-bold text-white mb-2">AI Bekerja</h4>
+        <p class="text-slate-400 text-sm">Groq Vision membaca teks tulisan dan otomatis menentukan mata kuliah yang relevan.</p>
+      </div>
+
+      <div class="text-center p-6">
+        <div class="w-12 h-12 mx-auto rounded-full bg-slate-800 border border-slate-700 text-brand-400 font-extrabold flex items-center justify-center mb-4 text-lg">3</div>
+        <h4 class="text-lg font-bold text-white mb-2">Siap UTS & UAS</h4>
+        <p class="text-slate-400 text-sm">Catatan tersusun rapi per matkul, bisa dicari atau disalin ke clipboard kapan pun.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ Section -->
+  <section id="faq" class="py-20 px-6 border-t border-slate-800 bg-slate-900/50">
+    <div class="max-w-3xl mx-auto">
+      <div class="text-center mb-16">
+        <h2 class="text-xs font-bold uppercase tracking-widest text-brand-400 mb-2">Pertanyaan Populer</h2>
+        <h3 class="text-3xl font-extrabold text-white">Frequently Asked Questions</h3>
+      </div>
+
+      <div class="space-y-6">
+        <div class="p-6 rounded-xl bg-slate-800 border border-slate-700">
+          <h4 class="text-base font-bold text-white mb-2">Apakah Notia gratis?</h4>
+          <p class="text-slate-400 text-sm leading-relaxed">
+            Ya, 100% gratis dan open-source di bawah lisensi MIT. Tidak ada biaya langganan, tidak ada iklan tersembunyi.
+          </p>
+        </div>
+
+        <div class="p-6 rounded-xl bg-slate-800 border border-slate-700">
+          <h4 class="text-base font-bold text-white mb-2">Bagaimana cara mendapatkan API Key Groq?</h4>
+          <p class="text-slate-400 text-sm leading-relaxed">
+            Groq menyediakan API key gratis untuk model multimodal vision. Anda cukup membuat akun di <a href="https://console.groq.com" target="_blank" class="text-brand-400 underline">console.groq.com</a> dan menyalin kuncinya ke dalam file <code class="text-brand-300">.env</code>.
+          </p>
+        </div>
+
+        <div class="p-6 rounded-xl bg-slate-800 border border-slate-700">
+          <h4 class="text-base font-bold text-white mb-2">Apakah foto catatan saya diunggah ke server?</h4>
+          <p class="text-slate-400 text-sm leading-relaxed">
+            Tidak. Notia berarsitektur <strong>local-first</strong>. Seluruh foto dan metadata tersimpan di SQLite lokal ponsel Anda. Foto hanya dikirimkan ke Groq Vision API saat Anda memproses ekstraksi teks, tanpa disimpan permanen di server luar.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="py-12 px-6 border-t border-slate-800 text-center text-slate-500 text-sm">
+    <div class="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div class="flex items-center space-x-2">
+        <span class="font-bold text-slate-300">Notia</span>
+        <span>• Open Source MIT License</span>
+      </div>
+      <div>
+        Dibuat untuk ekosistem mahasiswa Indonesia 🇮🇩
+      </div>
+      <div>
+        <a href="https://github.com/aryarizky/notia" target="_blank" class="text-brand-400 hover:text-brand-300 transition font-medium">GitHub Repository</a>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>

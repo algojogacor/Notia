@@ -39,7 +39,9 @@
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "test:db": "node test-db.js",
-    "benchmark": "node test-benchmark.js"
+    "benchmark": "node test-benchmark.js",
+    "export:android": "expo export -p android --no-bytecode",
+    "build:apk:preview": "eas build -p android --profile preview"
   },
   "private": true
 }

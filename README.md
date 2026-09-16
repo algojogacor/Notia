@@ -34,29 +34,39 @@
 
 ```
 D:\Projects\Notia\
+├── .github/workflows/
+│   └── ci.yml               # Pipeline CI/CD GitHub Actions
 ├── app/
 │   ├── (tabs)/
 │   │   ├── _layout.tsx      # Bottom Tab Navigator (Beranda, Kamera, Cari)
-│   │   ├── index.tsx        # Screen Beranda: Ringkasan catatan, chip mata kuliah
-│   │   ├── camera.tsx       # Screen Kamera: Viewfinder & status Groq vision
-│   │   └── search.tsx       # Screen Pencarian: Input pencarian & query SQLite
+│   │   ├── index.tsx        # Screen Beranda: Ringkasan catatan, chip matkul, banner efisiensi
+│   │   ├── camera.tsx       # Screen Kamera: Multi-step capture, preview & OCR vision
+│   │   └── search.tsx       # Screen Pencarian: Input pencarian multi-kriteria & SQLite
 │   ├── note/
-│   │   └── [id].tsx         # Screen Detail Catatan: Foto, transkripsi teks, metadata
+│   │   └── [id].tsx         # Screen Detail Catatan: Foto full, salin teks & share
 │   ├── _layout.tsx          # Root Layout + SQLiteProvider initialization
-│   └── modal.tsx            # Informasi app & status sprint
+│   └── modal.tsx            # Informasi app, share ke teman & panduan onboarding
+├── components/
+│   └── OnboardingModal.tsx  # 3-slide guide untuk mahasiswa baru
+├── docs/
+│   ├── index.html           # Web Showcase Landing Page (Tailwind CSS)
+│   ├── brand-guidelines.md  # Panduan identitas visual & tone of voice
+│   ├── growth-playbook.md   # Strategi viral loops & kampus ambassador
+│   └── launch-pack.md       # Copywriting peluncuran (Twitter/X, WA, TikTok)
 ├── src/
 │   ├── db/
 │   │   ├── schema.ts        # DDL SQLite (tabel subjects, notes, index, seed)
 │   │   └── database.ts      # Helper query CRUD, stats, & migrasi database
 │   ├── services/
+│   │   ├── analytics.ts     # Local-only academic stats & viral share generator
 │   │   └── groq.ts          # Groq Multimodal Vision API client
 │   ├── types/
 │   │   └── index.ts         # Definisi tipe domain (Subject, Note, GroqResult)
 │   └── constants/
 │       └── Colors.ts        # Tema warna Notia (Light & Dark mode)
 ├── .env.example             # Template konfigurasi environment
-├── .gitignore
-├── app.json
+├── app.json                 # Konfigurasi aplikasi Android (com.notia.app)
+├── eas.json                 # Konfigurasi EAS Build Standalone APK
 ├── package.json
 └── README.md
 ```
@@ -130,6 +140,33 @@ npx expo start --android
 npx expo start --web
 ```
 
+### 5. Build Standalone APK Android & Quality Gates
+```bash
+# Typecheck TypeScript
+npm run typecheck
+
+# Pengujian SQLite Database
+npm run test:db
+
+# Benchmark Latensi & Ukuran Bundle
+npm run benchmark
+
+# Export bundle native Android
+npm run export:android
+
+# Build standalone APK via EAS (dapat langsung diinstall di HP)
+npm run build:apk:preview
+```
+
+---
+
+## 📚 Dokumentasi & Resource Ekosistem
+
+- 🌐 **[Web Showcase Landing Page](docs/index.html)** — Halaman showcase interaktif siap deploy ke GitHub Pages.
+- 🎨 **[Brand Identity & Guidelines System](docs/brand-guidelines.md)** — Panduan warna brand, tipografi, dan tone of voice mahasiswa.
+- 📈 **[Growth Hacker Playbook](docs/growth-playbook.md)** — Strategi viral loop K-factor, aktivasi 60 detik, dan program campus ambassador.
+- 🚀 **[Marketing Launch Campaign Pack](docs/launch-pack.md)** — Thread Twitter/X viral 7-tweet, pesan siaran WhatsApp kelas, storyboard TikTok 30s.
+
 ---
 
 ## 📋 Roadmap Sprint Notia
@@ -140,22 +177,32 @@ npx expo start --web
   - Integrasi database lokal `expo-sqlite` dengan skema `subjects` dan `notes`.
   - Groq API client setup untuk multimodal vision (env variable secure).
   - Dokumentasi README lengkap.
-- [ ] **PHASE 2 — Core Feature: Capture & AI (Week 1-2)**:
-  - Kamera fungsional (expo-camera).
-  - Groq vision multimodal pipeline (transkrip teks catatan kuliah Indonesia).
-  - Auto-kategorisasi mata kuliah tersimpan ke SQLite.
-- [ ] **PHASE 3 — Browse & Search (Week 2)**:
-  - Filter catatan per mata kuliah.
-  - Full-text search catatan kuliah.
-- [ ] **PHASE 4 — Polish & QA (Week 3)**:
-  - Dark mode support, haptics, error handling.
-- [ ] **PHASE 5 — Launch Prep (Week 3-4)**:
-  - Build standalone APK untuk distribusi mahasiswa.
+- [x] **PHASE 2 — Core Feature: Capture & AI (Week 1-2)**:
+  - Kamera & galeri picker (`expo-image-picker`, `expo-file-system`).
+  - Groq vision multimodal pipeline (`llama-3.2-11b-vision-preview`).
+  - Auto-kategorisasi mata kuliah tersimpan ke SQLite lokal.
+- [x] **PHASE 3 — Browse & Search (Week 2)**:
+  - Filter catatan per mata kuliah dengan SectionList dan Timeline.
+  - Full-text multi-criteria search catatan kuliah.
+  - Salin hasil OCR ke clipboard (`expo-clipboard`) & native share.
+- [x] **PHASE 4 — Polish & QA (Week 3)**:
+  - Haptic tactile feedback (`expo-haptics`) di setiap interaksi penting.
+  - Onboarding modal 3-slide untuk mahasiswa baru (`@react-native-async-storage/async-storage`).
+  - Penanganan edge cases (kamera ditolak, offline, foto tanpa teks).
+  - Benchmark latensi sub-millisecond dan verifikasi ukuran app < 50MB.
+- [x] **PHASE 5 — Launch Prep (Week 3-4)**:
+  - Standalone APK configuration (`eas.json` & `package: "com.notia.app"`).
+  - Otomasi CI/CD GitHub Actions (`.github/workflows/ci.yml`).
+  - Panduan identitas brand (`docs/brand-guidelines.md`).
+  - Product-Led Growth & local analytics tracker (`src/services/analytics.ts` & `docs/growth-playbook.md`).
+  - Launch marketing pack (`docs/launch-pack.md`) & Web Showcase Landing Page (`docs/index.html`).
 - [ ] **PHASE 6 — Live & Feedback (Week 4+)**:
-  - Beta testing dengan 5+ mahasiswa, triage feedback.
+  - Beta testing dengan mahasiswa pilot (UI, ITB, UGM, ITS, Telkom).
+  - Pengumpulan feedback & triage issues.
 
 ---
 
 ## 📄 Lisensi
 
 Open Source under the [MIT License](LICENSE). Dibuat untuk ekosistem mahasiswa Indonesia.
+

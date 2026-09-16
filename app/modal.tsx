@@ -14,6 +14,7 @@ import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
 import OnboardingModal from '@/components/OnboardingModal';
+import { shareNotiaApp } from '@/src/services/analytics';
 
 export default function ModalScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -29,6 +30,15 @@ export default function ModalScreen() {
     setShowOnboarding(true);
   };
 
+  const handleShareApp = async () => {
+    if (Platform.OS !== 'web') {
+      try {
+        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      } catch {}
+    }
+    await shareNotiaApp();
+  };
+
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: theme.background }]}
@@ -42,14 +52,37 @@ export default function ModalScreen() {
         Organize foto catatan kuliah pakai AI vision untuk mahasiswa Indonesia.
       </Text>
 
+      {/* Button to Share App */}
+      <TouchableOpacity
+        style={[styles.shareBtn, { backgroundColor: '#10B981' }]}
+        activeOpacity={0.8}
+        onPress={handleShareApp}>
+        <Ionicons name="share-social" size={20} color="#FFFFFF" />
+        <Text style={styles.shareBtnText}>Bagikan Notia ke Teman Sekelas</Text>
+      </TouchableOpacity>
+
       {/* Button to Replay Onboarding */}
       <TouchableOpacity
-        style={[styles.onboardingBtn, { backgroundColor: theme.tint }]}
+        style={[styles.onboardingBtn, { backgroundColor: theme.card, borderColor: theme.border }]}
         activeOpacity={0.8}
         onPress={handleOpenOnboarding}>
-        <Ionicons name="help-circle-outline" size={20} color="#FFFFFF" />
-        <Text style={styles.onboardingBtnText}>Lihat Panduan Onboarding</Text>
+        <Ionicons name="help-circle-outline" size={20} color={theme.tint} />
+        <Text style={[styles.onboardingBtnText, { color: theme.tint }]}>Lihat Panduan Onboarding</Text>
       </TouchableOpacity>
+
+      <View
+        style={[
+          styles.card,
+          { backgroundColor: theme.card, borderColor: theme.border },
+        ]}>
+        <Text style={[styles.cardTitle, { color: theme.text }]}>
+          🔒 Privasi 100% Local-First
+        </Text>
+        <Text style={[styles.cardDesc, { color: theme.subtext }]}>
+          Notia tidak memiliki server pelacak pihak ketiga. Seluruh foto catatan dan
+          hasil teks kuliah tersimpan aman di penyimpanan internal smartphone kamu.
+        </Text>
+      </View>
 
       <View
         style={[
@@ -94,9 +127,9 @@ export default function ModalScreen() {
           • Phase 1: Foundation (✅ Selesai){'\n'}
           • Phase 2: Capture & AI Vision (✅ Selesai){'\n'}
           • Phase 3: Browse & Search (✅ Selesai){'\n'}
-          • Phase 4: Polish & QA (🔄 Sedang Berjalan){'\n'}
-          • Phase 5: Launch Prep{'\n'}
-          • Phase 6: Live & Feedback
+          • Phase 4: Polish & QA (✅ Selesai){'\n'}
+          • Phase 5: Launch Prep (✅ Selesai){'\n'}
+          • Phase 6: Live & Feedback (🚀 Siap Distribusi)
         </Text>
       </View>
 
@@ -140,6 +173,22 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     paddingHorizontal: 12,
   },
+  shareBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 13,
+    borderRadius: 14,
+    marginBottom: 10,
+    width: '100%',
+    justifyContent: 'center',
+  },
+  shareBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 14,
+  },
   onboardingBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -147,12 +196,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 12,
     borderRadius: 14,
-    marginBottom: 20,
+    borderWidth: 1,
+    marginBottom: 18,
     width: '100%',
     justifyContent: 'center',
   },
   onboardingBtnText: {
-    color: '#FFFFFF',
     fontWeight: '700',
     fontSize: 14,
   },

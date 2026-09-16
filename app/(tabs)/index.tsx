@@ -26,10 +26,15 @@ import {
   getDatabaseStats,
 } from '@/src/db/database';
 import {
+  calculateAcademicImpact,
+  shareNotiaApp,
+} from '@/src/services/analytics';
+import {
   SubjectWithCount,
   NoteWithSubject,
   SubjectSection,
   DatabaseStats,
+  AcademicImpactStats,
 } from '@/src/types';
 
 type ViewMode = 'GROUPED' | 'TIMELINE';
@@ -44,6 +49,13 @@ export default function HomeScreen() {
   const [stats, setStats] = useState<DatabaseStats>({
     notesCount: 0,
     subjectsCount: 0,
+  });
+  const [academicStats, setAcademicStats] = useState<AcademicImpactStats>({
+    notesCount: 0,
+    subjectsCount: 0,
+    minutesSaved: 0,
+    hoursSaved: '0.0',
+    activeDaysCount: 0,
   });
   const [subjectsWithCount, setSubjectsWithCount] = useState<SubjectWithCount[]>([]);
   const [allNotes, setAllNotes] = useState<NoteWithSubject[]>([]);
@@ -75,17 +87,19 @@ export default function HomeScreen() {
 
   const loadData = useCallback(async () => {
     try {
-      const [loadedStats, loadedSubs, loadedNotes, loadedGrouped] =
+      const [loadedStats, loadedSubs, loadedNotes, loadedGrouped, loadedImpact] =
         await Promise.all([
           getDatabaseStats(db),
           getSubjectsWithCount(db),
           getNotes(db),
           getNotesGroupedBySubject(db),
+          calculateAcademicImpact(db),
         ]);
       setStats(loadedStats);
       setSubjectsWithCount(loadedSubs);
       setAllNotes(loadedNotes);
       setGroupedSections(loadedGrouped);
+      setAcademicStats(loadedImpact);
     } catch (err) {
       console.error('Error loading dashboard data:', err);
     }
@@ -263,6 +277,59 @@ export default function HomeScreen() {
             Local-First
           </Text>
         </View>
+      </View>
+
+      {/* Academic Impact & Growth Share Banner */}
+      <View
+        style={[
+          styles.impactBanner,
+          {
+            backgroundColor:
+              colorScheme === 'dark' ? '#1E293B' : '#EFF6FF',
+            borderColor:
+              colorScheme === 'dark' ? '#334155' : '#BFDBFE',
+          },
+        ]}>
+        <View style={styles.impactContent}>
+          <View style={styles.impactIconCircle}>
+            <Ionicons name="sparkles" size={18} color="#2563EB" />
+          </View>
+          <View style={styles.impactTextCol}>
+            <Text
+              style={[
+                styles.impactTitle,
+                { color: colorScheme === 'dark' ? '#F8FAFC' : '#1E3A8A' },
+              ]}>
+              {stats.notesCount > 0
+                ? `⚡ Hemat ~${academicStats.hoursSaved} Jam Waktu Belajar!`
+                : '⚡ Siap Hadapi UTS/UAS Tanpa Panik'}
+            </Text>
+            <Text
+              style={[
+                styles.impactSub,
+                { color: colorScheme === 'dark' ? '#94A3B8' : '#3B82F6' },
+              ]}>
+              {stats.notesCount > 0
+                ? `${academicStats.notesCount} catatan tersusun rapi di ${academicStats.subjectsCount} matkul.`
+                : 'Foto catatanmu & biarkan AI Vision mengelompokkannya.'}
+            </Text>
+          </View>
+        </View>
+
+        <TouchableOpacity
+          style={styles.impactShareBtn}
+          activeOpacity={0.8}
+          onPress={() => {
+            if (Platform.OS !== 'web') {
+              try {
+                Haptics.selectionAsync();
+              } catch {}
+            }
+            shareNotiaApp(academicStats);
+          }}>
+          <Ionicons name="share-social-outline" size={14} color="#FFFFFF" />
+          <Text style={styles.impactShareText}>Bagikan</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Mata Kuliah Filter Carousel */}
@@ -626,6 +693,56 @@ const styles = StyleSheet.create({
   statLabel: {
     fontSize: 11,
     fontWeight: '500',
+  },
+  impactBanner: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 14,
+    marginBottom: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  impactContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  impactIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#DBEAFE',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  impactTextCol: {
+    flex: 1,
+  },
+  impactTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  impactSub: {
+    fontSize: 11,
+    lineHeight: 15,
+  },
+  impactShareBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#2563EB',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  impactShareText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
   },
   sectionTitleRow: {
     flexDirection: 'row',

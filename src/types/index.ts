@@ -47,3 +47,12 @@ export interface DatabaseStats {
   notesCount: number;
   subjectsCount: number;
 }
+
+export interface AcademicImpactStats {
+  notesCount: number;
+  subjectsCount: number;
+  minutesSaved: number;
+  hoursSaved: string;
+  activeDaysCount: number;
+}
+
